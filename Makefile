@@ -2,8 +2,10 @@
 CXX=clang++
 # use c++17
 CXXFLAGS=-std=c++1z
+OBJS=src/Box-exp.o
 
-Box-exp:
+Box-exp: $(OBJS)
+	$(CXX) $(CXXFLAGS) -o $@ $^
 
 .PHONY: clean
 

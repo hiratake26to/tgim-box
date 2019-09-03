@@ -229,6 +229,7 @@ public:
   string Build();
 };
 
+
 void box_test() {
   cout << "[TEST] " << __FUNCTION__ << endl;
 
@@ -265,6 +266,7 @@ void box_channel_merge_test() {
 
   // create router box
   Box r0 = basic_box.Fork("Router0");
+    r0.AddChannel("C1", "Csma");
   Box r1 = basic_box.Fork("Router1");
   Box r2 = basic_box.Fork("Router2");
 
@@ -272,7 +274,7 @@ void box_channel_merge_test() {
   // r0[C] -> [C]r1
   //     | -> [C]r2
   r0.Connect("C", r1, "C");
-  r0.Connect("C", r2, "C");
+  r0.Connect("C1", r2, "C");
 
   cout << r0.ToString() << endl;
   cout << r1.ToString() << endl;
@@ -308,6 +310,8 @@ void box_channel_merge_test2() {
   // create router box
   Box r0 = basic_box.Fork("Router0");
     r0.channels[0].type = "PPP";
+    r0.AddChannel("C1", "PPP");
+    r0.AddChannel("C2", "PPP");
   Box r1 = basic_box.Fork("Router1");
     r1.channels[0].type = "Csma";
   Box r2 = basic_box.Fork("Router2");
@@ -319,8 +323,8 @@ void box_channel_merge_test2() {
   // r3[C] -> r0[C] -> [C]r1
   //              | -> [C]r2
   r0.Connect("C", r1, "C");
-  r0.Connect("C", r2, "C");
-  r3.Connect("C", r0, "C");
+  r0.Connect("C1", r2, "C");
+  r3.Connect("C", r0, "C2");
 
   cout << r0.ToString() << endl;
   cout << r1.ToString() << endl;
@@ -468,17 +472,21 @@ void box_channel_merge_test5() {
 
 }
 
-int main() {
-  //box_test();
-  //cout << endl;
-  //box_channel_merge_test();
-  //cout << endl;
-  //box_channel_merge_test2();
-  //cout << endl;
-  //box_channel_merge_test3();
-  //cout << endl;
+void test() {
+  box_test();
+  cout << endl;
+  box_channel_merge_test();
+  cout << endl;
+  box_channel_merge_test2();
+  cout << endl;
+  box_channel_merge_test3();
+  cout << endl;
   box_channel_merge_test4();
   cout << endl;
   box_channel_merge_test5();
+}
+
+int main() {
+  test();
   return 0;
 }
