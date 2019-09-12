@@ -1,7 +1,8 @@
 #CXXFLAGS=-std=c++11
 CXX=clang++
 # use c++17
-CXXFLAGS=-std=c++1z
+CXXFLAGS=-g3 -std=c++1z $(INCLUDE)
+INCLUDE=-I./include
 OBJS=src/Box-exp.o
 
 Box-exp: $(OBJS)
@@ -10,4 +11,4 @@ Box-exp: $(OBJS)
 .PHONY: clean
 
 clean:
-	rm -fr Box-exp.o Box-exp
+	rm -fr $(OBJS) Box-exp
