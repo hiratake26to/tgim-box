@@ -4,54 +4,175 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <algorithm>
+#include <utility>
+#include <map>
 
 using std::cout;
 using std::endl;
 using std::optional;
 using std::string;
 using std::vector;
+using std::pair;
+using std::map;
 
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
+
+#define RANGE(v) v.begin(), v.end()
 
 
 //////////////////////////////
 #define PORT2 1
 //////////////////////////////
 
+// Box型が順序付けされていれば BoxType
+// 順序付けされていなければ ParentChild
+enum class OrderingType {
+  BoxType,
+  ParentChild
+};
+
+map<string,int> map_boxtype_num;
+void boxtype_append(string str) {
+  map_boxtype_num[str] = map_boxtype_num.size();
+}
+void init() {
+  // the smaller value, the higher priority.
+  // descending order.
+  //boxtype_append("Internet");
+  //boxtype_append("Subnet");
+  //boxtype_append("Router");
+  boxtype_append("Switch");
+  //boxtype_append("Gateway");
+  //boxtype_append("Hub");
+  boxtype_append("Terminal");
+}
+
+optional<int> boxtype_to_num(string str) {
+  if (map_boxtype_num.find(str) == map_boxtype_num.end()) return {};
+  return map_boxtype_num.at(str);
+}
+
+enum class ParentChild {
+  Parent, Child
+};
+enum class BoxOrdering {
+  EQ, LT, GT
+};
+typedef BoxOrdering BoxEquality;
+
+struct BoxPriority {
+  string box_type;
+  ParentChild parent_child;
+};
+
+optional<BoxEquality> CompBoxType(string lhs, string rhs) {
+  auto lret = boxtype_to_num(lhs);
+  auto rret = boxtype_to_num(rhs);
+  if (not (lret and rret)) {
+    return {};
+    //throw std::logic_error("Exception: could not compare box type, due to no ordering box type!");
+  }
+  auto lval = lret.value();
+  auto rval = rret.value();
+  if (lval == rval) return BoxOrdering::EQ;
+  else if (lval < rval) return BoxOrdering::LT;
+  else if (lval > rval) return BoxOrdering::GT;
+
+  return {};
+}
+
+optional<BoxEquality> CompBoxParentChild(ParentChild lhs, ParentChild rhs) {
+  if (lhs == rhs) return BoxOrdering::EQ;
+  else if (lhs == ParentChild::Parent) return BoxOrdering::LT;
+  else if (rhs == ParentChild::Parent) return BoxOrdering::GT;
+  return {};
+}
+
+BoxEquality CompBoxPriority(const BoxPriority& lhs, const BoxPriority& rhs) {
+  if (auto result = CompBoxType(lhs.box_type, rhs.box_type)) {
+    return result.value();
+  }
+  if (auto result = CompBoxParentChild(lhs.parent_child, rhs.parent_child)) {
+    return result.value();
+  }
+
+  throw std::logic_error("Exception: could not compare box prent-child relation!");
+}
+
+bool operator<(const BoxPriority& lhs, const BoxPriority& rhs) {
+  if (CompBoxPriority(lhs, rhs) == BoxOrdering::LT) {
+    return true;
+  }
+  else if (CompBoxPriority(lhs, rhs) == BoxOrdering::GT) {
+    return false;
+  }
+  return false;
+}
+bool operator> (const BoxPriority& lhs, const BoxPriority& rhs){ return rhs < lhs; }
+bool operator<=(const BoxPriority& lhs, const BoxPriority& rhs){ return !(lhs > rhs); }
+bool operator>=(const BoxPriority& lhs, const BoxPriority& rhs){ return !(lhs < rhs); }
+bool operator==(const BoxPriority& lhs, const BoxPriority& rhs) {
+  if (CompBoxPriority(lhs, rhs) == BoxOrdering::EQ) {
+    //if (lhs.ordering_type == OrderingType::BoxType) {
+    //  std::cerr << "warning: no ordering box type!" << endl;
+    //}
+    //else if (lhs.ordering_type == OrderingType::ParentChild) {
+    //  std::cerr << "warning: no parent-child relation!" << endl;
+    //}
+    return true;
+  }
+  return false;
+}
+bool operator!=(const BoxPriority& lhs, const BoxPriority& rhs){ return !(lhs == rhs); }
+
+
+//////////////////////////////////////////////////
 
 struct Netif {
   string connect;
-  optional<string> as;
+  vector<string> as;
 };
 
 struct Point {
   int x;
   int y;
   optional<int> z;
+
+  Point operator +(const Point& rhs) const {
+    Point ret{
+      .x = this->x + rhs.x,
+      .y = this->y + rhs.y
+    };
+    if (this->z && rhs.z) {
+      ret.z = this->z.value() + rhs.z.value();
+    }
+    return ret;
+  }
 };
 
 struct Node {
   string name;
   string type;
   // connection for internal node of box
-  optional<string> connect_to; // connecting a channel
-  optional<string> role; // connecting as a role
-  bool is_connected;
+  vector<string> connect_to; // connecting a channel
+  vector<string> roles; // connecting as a role
+  //bool is_connected;
   Point point;
   
 
-  void Connect(string channel_name, optional<string> role_name) {
-    if (is_connected) {
-      std::stringstream ss;
-      ss << "exception: the node already has connected to a channel." << endl;
-      ss << "\tnode dump: " << ToString(1) << endl;
-      throw std::logic_error(ss.str());
-    }
+  void Connect(string channel_name, vector<string> roles) {
+    //if (is_connected) {
+    //  std::stringstream ss;
+    //  ss << "exception: the node already has connected to a channel." << endl;
+    //  ss << "\tnode dump: " << ToString(1) << endl;
+    //  throw std::logic_error(ss.str());
+    //}
 
-    this->connect_to = channel_name;
-    this->role = role_name;
-    is_connected = true;
+    this->connect_to.push_back(channel_name);
+    this->roles = roles;
+    //is_connected = true;
   }
 
   void Connect(string channel_name) {
@@ -61,8 +182,8 @@ struct Node {
   // list of connections, from node to channel
   vector<Netif> GenConnList() const {
     vector<Netif> list;
-    if (connect_to) {
-      list.push_back({connect_to.value(), role});
+    for (const auto& conn : this->connect_to) {
+      list.push_back({conn, this->roles});
     }
 
     return list;
@@ -72,9 +193,9 @@ struct Node {
     std::stringstream ss;
     ss << "Node`" << name << ":" << type << "`";
     if (level >= 1) {
-      ss << "{to:" << connect_to.value_or("");
-      ss << ",as:" << role.value_or("");
-      ss << "," << is_connected;
+      ss << "{to:[" << std::accumulate(RANGE(connect_to), string{}, [](string a, string b){if(a=="") return b;else return a+b;});
+      ss << "],as:" << std::accumulate(RANGE(roles), string{}, [](string a, string b){if(a=="") return b;else return a+b;});
+      //ss << "," << is_connected;
       ss << "}";
     }
     return ss.str();
@@ -84,15 +205,20 @@ struct Node {
 struct Channel {
   string name;
   string type;
-  bool is_used; // if the flag is 1, channel has used for box ports (this is called portalized)
-  optional<string> port; // which port use this channel
+  optional<string> port; // which port use for this channel
+  json config;
+
+  Channel& SetConfig(json val) {
+    config = val;
+    return *this;
+  }
 
   string ToString(int level=0) const {
     std::stringstream ss;
     ss << "Channel`" << name << ":" << type << "`";
     if (level >= 1) {
-      ss << "{used:"<<(is_used ? "1":"0")<<",";
-      ss << "port:" << port.value_or("");
+      ss << "{port:" << port.value_or("");
+      ss << ",conf:" << config;
       ss << "}";
     }
     return ss.str();
@@ -117,7 +243,7 @@ struct Port2 {
   string to_box;
   string to_box_port;
 
-  int relation;
+  int relation; // 0: none, 1:parent-child
   int is_parent;
   //int priority;
 
@@ -127,11 +253,16 @@ struct Port2 {
   // NOTE merged channel temporary put in Port2
   optional<MergedChannel> mchannel;
 
+  Port2& SetMaxConnection(int val) {
+    max_conn = val;
+    return *this;
+  }
+
   void IncCurConn() {
     if ( cur_conn > max_conn-1 ) {
       std::stringstream ss;
       ss << "exception: `cur_conn = " << cur_conn
-         << "` increasing. due to over its maximum `max_conn = " << max_conn << "`.";
+         << "` could not increased due to over its maximum `max_conn = " << max_conn << "`." << endl;
       ss << "\tport dump: " << ToString() << endl;
       throw std::logic_error(ss.str());
     }
@@ -141,9 +272,9 @@ struct Port2 {
   string ToString(int level=0) const {
     std::stringstream ss;
     ss << "Port2`" << name << "`{";
-    ss << from_channel << ",";
-    ss << to_box << ",";
-    ss << to_box_port << ",";
+    ss << "ch:" << from_channel << ",";
+    ss << "bx:" << to_box << ",";
+    ss << "ch:" << to_box_port << ",";
     ss << relation << ",";
     ss << is_parent << ",";
     ss << "conn:"<< cur_conn << "/" << max_conn;
@@ -223,10 +354,12 @@ private:
   // [TODO] 名前をポインタとして使ってしまっているので, 別途ポインタを用意したい.
   string name_;
   string type_;
+  Point point_;
 
 public:
   Box(string name, string type): name_(name), type_(type) {
     // initialization
+    point_ = {};
   }
 
   // [TODO]
@@ -234,12 +367,19 @@ public:
   // 名前はポインタのように扱われるため, 接続後に名前を変更した場合, 動作は未定義.
   //
   // 接続後の名前の変更を禁止にするアイディアはどうだろうか.
-  void SetName(string name) {
+  Box& SetName(string name) {
     this->name_ = name;
+    return *this;
   }
 
-  void SetType(string type) {
+  Box& SetType(string type) {
     this->type_ = type;
+    return *this;
+  }
+
+  Box& SetPoint(Point pt) {
+    this->point_ = pt;
+    return *this;
   }
 
   string GetName() const {
@@ -248,6 +388,10 @@ public:
 
   string GetType() const {
     return this->type_;
+  }
+
+  Point GetPoint() const {
+    return this->point_;
   }
 
   Box Fork(string name) const {
@@ -321,8 +465,8 @@ public:
 
       // connect_to name mangle
       // note that distination of node.connect_to must be internal box.
-      if (node.connect_to) {
-        node.connect_to.value() = this->name_ + PrefixChannel(node.connect_to.value());
+      for (auto&& conn : node.connect_to) {
+        conn = this->name_ + PrefixChannel(conn);
       }
     }
     for (auto&& ch : this->channels) {
@@ -341,12 +485,40 @@ public:
     }
   }
 
-  void AddNode(string name, string type) {
+  Node& CreateNode(string name, string type) {
     nodes.push_back(Node{name, type});
+    return FindNode(name).value();
   }
 
-  void AddChannel(string name, string type) {
+  Node& CopyNode(string src, string dst) {
+    auto&& result = FindNode(src);
+    if (not result) {
+      std::stringstream ss;
+      ss << "could not copy node, no exist node has name of \"" << src << "\"";
+      throw std::runtime_error(ss.str());
+    }
+    Node node = result.value();
+    node.name = dst;
+    nodes.push_back(node);
+    return FindNode(dst).value();
+  }
+
+  Channel& CreateChannel(string name, string type) {
     channels.push_back(Channel{name, type});
+    return FindChannel(name).value();
+  }
+
+  Channel& CopyChannel(string src, string dst) {
+    auto&& result = FindChannel(src);
+    if (not result) {
+      std::stringstream ss;
+      ss << "could not copy channel, no exist channel has name of \"" << src << "\"";
+      throw std::runtime_error(ss.str());
+    }
+    Channel channel = result.value();
+    channel.name = dst;
+    channels.push_back(channel);
+    return FindChannel(dst).value();
   }
 
   optional<std::reference_wrapper<Channel>> FindChannel(string name) const {
@@ -372,17 +544,21 @@ public:
 
   optional<string> CheckInvalidChannel(const Channel& from_channel, const Channel& to_channel) {
     // 1対1接続であることを確認
-    if (from_channel.is_used || to_channel.is_used) {
+    if (from_channel.port || to_channel.port) {
       std::stringstream ss;
-      if (from_channel.is_used) ss << "from channel: " << from_channel.name << " is used. ";
-      if (to_channel.is_used) ss << "to channel: " << to_channel.name << " is used. ";
+      if (from_channel.port) ss << "from channel: " << from_channel.name << " is used." << endl;
+      if (to_channel.port) ss << "to channel: " << to_channel.name << " is used." << endl;
       return ss.str();
     }
     return {};
   }
 
-#if PORT2
-  void CreatePort(const string& from_this_channel_name, const string& port_name) {
+  /* attempt to automatically construct port, what happens?
+  void CreatePort(const string& port_name) {
+    return BindPort(this->default_channel_, port_name);
+  }
+  */
+  Port2& CreatePort(const string& from_this_channel_name, const string& port_name) {
     Channel& from_channel = this->FindChannel(std::move(from_this_channel_name)).value();
     if (const auto& a = FindPort2(port_name)) {
       const Port2& p = a.value();
@@ -397,8 +573,9 @@ public:
     ports.push_back(
         Port2{port_name, from_this_channel_name, "", "", 0, 0});
 
-    from_channel.is_used = true;
     from_channel.port = port_name;
+
+    return FindPort2(port_name).value();
   }
   void SetPortMaxConnection(const string& port_name, int num) {
     Port2& port = FindPort2(std::move(port_name)).value();
@@ -433,14 +610,27 @@ public:
     }
     */
 
+    // FIXME multi-connecion
+    if (from_port.to_box != "" or to_port.to_box != "") {
+      std::stringstream ss;
+      ss << "exception: port connection error, port is already used" << endl;
+      if (from_port.to_box != "") {
+        ss << "\tsource port is already connected" << endl;
+      }
+      if (to_port.to_box != "") {
+        ss << "\tdistination port is already connected" << endl;
+      }
+      throw std::logic_error(ss.str());
+    }
+
     from_port.to_box = to_box.GetName();
     from_port.to_box_port = to_box_port_name;
-    from_port.relation = 0;
+    from_port.relation = 1;
     from_port.is_parent = 0;
 
     to_port.to_box = this->GetName();
     to_port.to_box_port = from_this_port_name;
-    to_port.relation = 0;
+    to_port.relation = 1;
     to_port.is_parent = 1;
 
     // update current connection count
@@ -451,59 +641,18 @@ public:
       std::stringstream ss;
       ss << e.what() << endl;
       ss << "box dump: " << ToString() << endl;
-      ss << "\tconnection error dut to increasing port connection count";
+      ss << "\tconnection error due to increasing port connection count";
       throw std::logic_error(ss.str());
     }
 
   }
-#else
-  optional<bool> Connect(const string& from_this_channel_name, Box& to_box, const string& to_box_channel_name) {
-    try {
-      Connect_(from_this_channel_name, to_box, to_box_channel_name);
-    } catch (const std::bad_optional_access& e) {
-      //throw std::logic_error("could not find channel in box");
-      return {};
-    }
-    return true;
-  }
 
-  void Connect_(const string& from_this_channel_name, Box& to_box, const string& to_box_channel_name) {
-    Channel& from_channel = this->FindChannel(std::move(from_this_channel_name)).value();
-    Channel& to_channel = to_box.FindChannel(std::move(to_box_channel_name)).value();
-
-    if (auto msg = this->CheckInvalidChannel(from_channel, to_channel)) {
-      std::stringstream ss;
-      ss << "connection failed. object dump:" << endl;
-      ss << "\tfrom box: " << this->ToString() << endl;
-      ss << "\tto box: " << to_box.ToString() << endl;
-      ss << "\tchecker message: " << msg.value() << endl;
-      ss << "\tnot pass through check a channel";
-      throw std::logic_error(ss.str());
-    }
-
-    if (this->type_ == to_box.type_ && from_channel.type == to_channel.type) {
-      ports.push_back(
-          Port{from_channel.type, to_box.GetName(), to_channel.type, 0, 0} );
-      to_box.ports.push_back(
-          Port{to_channel.type, this->GetName(), from_channel.type, 0, 1} );
-    } else {
-      ports.push_back(
-          Port{from_channel.type, to_box.GetName(), to_channel.type, 1, 0} );
-      to_box.ports.push_back(
-          Port{to_channel.type, this->GetName(), from_channel.type, 1, 1} );
-    }
-    from_channel.is_used = true;
-    to_channel.is_used = true;
-
-  }
-#endif
-
-  void InternallyConnect(const string& node_name, const string& channel_name) {
+  void ConnectNodeToChannel(const string& node_name, const string& channel_name, const vector<string>& roles = {}) {
     Node& node = this->FindNode(std::move(node_name)).value();
     //Channel& channel = this->FindChannel(std::move(channel_name)).value();
 
     try {
-      node.Connect(channel_name);
+      node.Connect(channel_name, roles);
     } catch(const std::logic_error& e) {
       std::stringstream ss;
       ss << e.what() << endl;
@@ -511,6 +660,15 @@ public:
       ss << "\tinternally connecting error";
       throw std::logic_error(ss.str());
     }
+  }
+
+  void TriConnect(vector<string> node_roles, string node_name, string channel_name, string port_name) {
+    this->ConnectNodeToChannel(node_name, channel_name, node_roles);
+    this->CreatePort(channel_name, port_name);
+  }
+
+  void TriConnect(string node_name, string channel_name, string port_name) {
+    this->TriConnect({}, node_name, channel_name, port_name);
   }
 
   string ToString(int level=0) const {
@@ -549,11 +707,7 @@ public:
   // NOTE mutable is meaning that allow returning reference from 'const function'
   mutable vector<Node> nodes;
   mutable vector<Channel> channels;
-#if PORT2
   mutable vector<Port2> ports; // ports is channels which has used by box connecting.
-#else
-  vector<Port> ports; // ports is channels which has used by box connecting.
-#endif
 };
 
 class NsomBuilder {
@@ -574,12 +728,13 @@ public:
   string Build() {
     // name mangling to avoid NSOM item's name conflict.
     vector<Box> boxs = boxs_;
-    for (auto&& b : boxs) b.Mangle();
+    for (auto&& b : boxs) {
+      b.Mangle();
+      cout << b.ToString(100) << endl;
+    }
 
-#if PORT2
     // TODO marge channel preprocess
     MergeChannel(boxs);
-#endif
 
     json j;
     j["name"]    = name_;
@@ -587,6 +742,13 @@ public:
     j["channel"] = GenChannelList(boxs);
     j["subnet"]  = GenSubnetList();
     j["apps"]    = GenAppsList();
+
+    cout << "[builder] build finish!" << endl;
+    cout << "[builder] network name: "  << j["name"] << endl;
+    cout << "[builder] generated node: "    << j["node"].size() << endl;
+    cout << "[builder] generated channel: " << j["channel"].size() << endl;
+    cout << "[builder] generated subnet: "  << j["subnet"].size() << endl;
+    cout << "[builder] generated apps: "    << j["apps"].size() << endl;
 
     return j.dump(2);
   }
@@ -600,49 +762,78 @@ public:
     return {};
   }
 
-  // これいる?
   optional<std::reference_wrapper<Port2>> FindRelevantPort2(Port2 port, vector<Box>& boxs) {
     Box& to_box = FindBox(port.to_box, boxs).value();
     return to_box.FindPort2(port.to_box_port).value();
   }
 
-  MergedChannel GetMergeChannel(vector<Box> boxs, Box from_box, Port2 from_port) {
-    // from_box.port.from_channel -> from_box.channel
-    Channel& from_channel = from_box.FindChannel(from_port.from_channel).value();
-    // from_box.port.to_box_name -> to_box
-    //   -> from_box.port.to_box_port_name -> to_box.port
+  // TODO check
+  BoxPriority ToBoxPriority(const Box& box, const Port2& port) {
+    return {
+      box.GetType(), (port.is_parent==1 ? ParentChild::Parent : ParentChild::Child)
+    };
+  }
+
+  MergedChannel GetMergeChannel(vector<Box> boxs, Box parent_box, Port2 parent_port) {
+    // parent_box.port.from_channel -> parent_box.channel
+    Channel& from_channel = parent_box.FindChannel(parent_port.from_channel).value();
+    // parent_box.port.to_box_name -> to_box
+    //   -> parent_box.port.to_box_port_name -> to_box.port
     //   -> to_box.channel
-    Box& to_box = FindBox(from_port.to_box, boxs).value();
-    Port2& to_box_port = to_box.FindPort2(from_port.to_box_port).value();
-    Channel& to_channel = to_box.FindChannel(to_box_port.from_channel).value();
+    Box& child_box = FindBox(parent_port.to_box, boxs).value();
+    Port2& child_box_port = child_box.FindPort2(parent_port.to_box_port).value();
+    Channel& to_channel = child_box.FindChannel(child_box_port.from_channel).value();
 
     std::stringstream ss;
     ss << "_M"; // _M prefixed to a merged channel, as signature
-    ss << from_box.GetName();
-    ss << from_port.name;
-    ss << to_box.GetName();
-    ss << to_box_port.name;
+    ss << parent_box.GetName();
+    ss << parent_port.name;
+    ss << child_box.GetName();
+    ss << child_box_port.name;
 
     MergedChannel ret = {
       .channels = {from_channel.name, to_channel.name},
       .value = {ss.str(), ""}
     };
 
+    // TODO merge
+    cout << "[DEBUG] parent_box " << parent_box.ToString(1) << endl;
+    cout << "[DEBUG] child_box " << child_box.ToString(1) << endl;
+    BoxPriority bp_parent = ToBoxPriority(parent_box,parent_port);
+    BoxPriority bp_child = ToBoxPriority(child_box,child_box_port);
+
+    if (bp_parent < bp_child) {
+      ret.value.type = from_channel.type;
+      ret.value.config = from_channel.config;
+      return ret;
+    } else if (bp_parent > bp_child) {
+      ret.value.type = to_channel.type;
+      ret.value.config = to_channel.config;
+      return ret;
+    }
+
+#if 0
+    // FIXME to_channel, from_channel の返却はあっているか?
     // チャネルの融合
     // 対等な接続なのでどれを取ってもよい
     if (to_box_port.relation == 0) {
       ret.value.type = from_channel.type;
+      //ret.value.config = to_channel.config + from_channel.config; // TODO configuration merge
+      ret.value.config = "\"configration merge dummy\"";
       return ret;
     }
     
     // 親子関係があるので親から取る
     if (to_box_port.is_parent == 1) {
-      ret.value.type = from_channel.type;
+      ret.value.type = to_channel.type;
+      ret.value.config = to_channel.config;
       return ret;
     } else {
-      ret.value.type = to_channel.type;
+      ret.value.type = from_channel.type;
+      ret.value.config = from_channel.config;
       return ret;
     }
+#endif
 
     throw std::logic_error("invalid port relation");
   }
@@ -680,7 +871,7 @@ private:
     json j;
 
     // set point x, y and optional z
-    auto pt = node.point;
+    auto pt = node.point + box.GetPoint();
     j["point"] = {{"x", pt.x},{"y", pt.y}};
     if (pt.z) j["point"]["z"] = pt.z.value();
 
@@ -704,7 +895,8 @@ private:
     // to "connect" and "as" respectively.
     // convert a connection node-to-channel to node-to-merged-channel.
     netif["connect"] = conn.connect;
-    if (conn.as) netif["as"] = conn.as.value();
+    if (conn.as.size() == 1) netif["as"] = conn.as[0];
+    else if (conn.as.size() >= 2) netif["as"] = conn.as;
 
     return netif;
   }
@@ -718,15 +910,9 @@ public:
         // the node's body create, and set
         // TODO check for convertion result
         if (port.is_parent) {
-#if PORT2
-          // TODO
           //Channel ch = GetMergeChannel(boxs, box, port);
           Channel ch = port.mchannel.value().value;
           j[ch.name] = GenChannelBody(ch);
-#else
-          Channel ch = port.GetMergeChannel();
-          j[ch.name] = GenChannelBody(ch);
-#endif
         }
       }
     }
@@ -734,8 +920,8 @@ public:
       for (const auto& ch : box.channels) {
         // set a node's name to a key,
         // the node's body create, and set
-        // TODO
-        if (not ch.is_used) j[ch.name] = GenChannelBody(ch);
+        // TODO invastigate channel generation
+        if (not ch.port) j[ch.name] = GenChannelBody(ch);
       }
     }
 
@@ -745,6 +931,10 @@ public:
   json GenChannelBody(Channel channel) {
     json j;
     j["type"] = channel.type;
+    cout << "[DEBUG]" << channel.ToString(1) << endl;
+    if (channel.config.is_object()) {
+      j["config"] = channel.config;
+    }
 
     return j;
   }
@@ -767,14 +957,14 @@ void box_test() {
 
   // create basic box
   Box basic_box("undefined", "Basic");
-  basic_box.AddNode("N0", "NodeType");
-  basic_box.AddChannel("C0", "ChannelType");
+  basic_box.CreateNode("N0", "NodeType");
+  basic_box.CreateChannel("C0", "ChannelType");
 
   // create b0, b1, b2 from basic box
   Box b0 = basic_box.Fork("b0");
 
   Box b1 = basic_box.Fork("b1");
-  b1.AddChannel("C1", "ChannelType");
+  b1.CreateChannel("C1", "ChannelType");
 
   Box b2 = basic_box.Fork("b2");
 
@@ -793,12 +983,12 @@ void box_channel_merge_test() {
 
   // create basic box
   Box basic_box("undefined", "Basic");
-  basic_box.AddNode("R", "Router");
-  basic_box.AddChannel("C", "Csma");
+  basic_box.CreateNode("R", "Router");
+  basic_box.CreateChannel("C", "Csma");
 
   // create router box
   Box r0 = basic_box.Fork("Router0");
-    r0.AddChannel("C1", "Csma");
+    r0.CreateChannel("C1", "Csma");
   Box r1 = basic_box.Fork("Router1");
   Box r2 = basic_box.Fork("Router2");
 
@@ -836,14 +1026,14 @@ void box_channel_merge_test2() {
 
   // create basic box
   Box basic_box("undefined", "Basic");
-  basic_box.AddNode("R", "Router");
-  basic_box.AddChannel("C", "Csma");
+  basic_box.CreateNode("R", "Router");
+  basic_box.CreateChannel("C", "Csma");
 
   // create router box
   Box r0 = basic_box.Fork("Router0");
     r0.channels[0].type = "PPP";
-    r0.AddChannel("C1", "PPP");
-    r0.AddChannel("C2", "PPP");
+    r0.CreateChannel("C1", "PPP");
+    r0.CreateChannel("C2", "PPP");
   Box r1 = basic_box.Fork("Router1");
     r1.channels[0].type = "Csma";
   Box r2 = basic_box.Fork("Router2");
@@ -887,8 +1077,8 @@ void box_channel_merge_test3() {
 
   // create basic box
   Box basic_box("undefined", "Pc");
-  basic_box.AddNode("P", "Pc");
-  basic_box.AddChannel("P", "PointToPoint");
+  basic_box.CreateNode("P", "Pc");
+  basic_box.CreateChannel("P", "PointToPoint");
 
   // create pc box
   Box p0 = basic_box.Fork("rb0");
@@ -896,10 +1086,10 @@ void box_channel_merge_test3() {
   Box p2 = basic_box.Fork("rb2");
   // create hub box
   Box h0("hb0", "Hub");
-  h0.AddNode("H", "Hub");
-  h0.AddChannel("P0", "PointToPoint");
-  h0.AddChannel("P1", "PointToPoint");
-  h0.AddChannel("P2", "PointToPoint");
+  h0.CreateNode("H", "Hub");
+  h0.CreateChannel("P0", "PointToPoint");
+  h0.CreateChannel("P1", "PointToPoint");
+  h0.CreateChannel("P2", "PointToPoint");
 
   // connect:
   // r0[P] -> [P0]h0
@@ -946,14 +1136,14 @@ void box_channel_merge_test4() {
   cout << "[TEST] " << __FUNCTION__ << endl;
 
   Box dev0("dev0", "Device");
-  dev0.AddNode("n", "Basic");
-  dev0.AddChannel("c", "PointToPoint");
+  dev0.CreateNode("n", "Basic");
+  dev0.CreateChannel("c", "PointToPoint");
   Box dev1 = dev0.Fork("dev1");
 
   Box rt("rt", "Router");
-  rt.AddNode("n", "Router");
-  rt.AddChannel("c0", "Csma");
-  rt.AddChannel("c1", "Csma");
+  rt.CreateNode("n", "Router");
+  rt.CreateChannel("c0", "Csma");
+  rt.CreateChannel("c1", "Csma");
 
   // dev0[c] -> [c0]rt
   dev0.Connect("c", rt, "c0");
@@ -981,8 +1171,8 @@ void box_channel_merge_test5() {
   cout << "[TEST] " << __FUNCTION__ << endl;
 
   Box dev0("dev0", "Device");
-  dev0.AddNode("n", "Basic");
-  dev0.AddChannel("c", "PointToPoint");
+  dev0.CreateNode("n", "Basic");
+  dev0.CreateChannel("c", "PointToPoint");
   Box dev1 = dev0.Fork("dev1");
 
   // dev0[c] -> [c0]rt
@@ -1008,14 +1198,14 @@ void internally_connect_test() {
   cout << "[TEST] " << __FUNCTION__ << endl;
 
   Box b("box", "Box");
-  b.AddNode("n0", "Node");
-  b.AddNode("n1", "Node");
-  b.AddChannel("c", "Channel");
+  b.CreateNode("n0", "Node");
+  b.CreateNode("n1", "Node");
+  b.CreateChannel("c", "Channel");
   // A node connection to a channel is once.
-  b.InternallyConnect("n0", "c");
-  //b.InternallyConnect("n0", "c"); // the error occurs by that call it continue from above calling
+  b.ConnectNodeToChannel("n0", "c");
+  //b.ConnectNodeToChannel("n0", "c"); // the error occurs by that call it continue from above calling
   // but channel can accept connection from other nodes.
-  b.InternallyConnect("n1", "c");
+  b.ConnectNodeToChannel("n1", "c");
 
   // [TODO] investigate grouping channel.
   // otherwise, tagged channel is usable.
@@ -1047,13 +1237,13 @@ void builder_test() {
 
   // create box
   Box b("box", "Box");
-  b.AddNode("n0", "Node");
-  b.AddNode("n1", "Node");
-  b.AddChannel("c", "Channel");
+  b.CreateNode("n0", "Node");
+  b.CreateNode("n1", "Node");
+  b.CreateChannel("c", "Channel");
 
   // internally connect
-  b.InternallyConnect("n0", "c");
-  b.InternallyConnect("n1", "c");
+  b.ConnectNodeToChannel("n0", "c");
+  b.ConnectNodeToChannel("n1", "c");
 
   Box b1 = b.Fork("box1");
 
@@ -1064,18 +1254,17 @@ void builder_test() {
   cout << builder.Build() << endl;
 }
 
-void builder_box_connection_test() {
   cout << "[TEST] " << __FUNCTION__ << endl;
 
   // create box
   Box b("box", "Box");
-  b.AddNode("n0", "Node");
-  b.AddNode("n1", "Node");
-  b.AddChannel("c", "Channel");
+  b.CreateNode("n0", "Node");
+  b.CreateNode("n1", "Node");
+  b.CreateChannel("c", "Channel");
 
   // internally connect
-  b.InternallyConnect("n0", "c");
-  b.InternallyConnect("n1", "c");
+  b.ConnectNodeToChannel("n0", "c");
+  b.ConnectNodeToChannel("n1", "c");
 
   Box b1 = b.Fork("box1");
 
@@ -1100,10 +1289,10 @@ void builder_box_connection_test() {
 void merge_channel_test() {
   // create box
   Box b0("b0", "Box");
-  b0.AddNode("n", "Node");
-  b0.AddChannel("c", "Channel");
+  b0.CreateNode("n", "Node");
+  b0.CreateChannel("c", "Channel");
   // internally connect
-  b0.InternallyConnect("n", "c");
+  b0.ConnectNodeToChannel("n", "c");
 
   // create port
   b0.CreatePort("c", "p");
@@ -1142,13 +1331,13 @@ void multi_inner_node_test() {
    */
   // create box
   Box b0("b0", "Box");
-  b0.AddNode("n0", "Node");
-  b0.AddNode("n1", "Node");
-  b0.AddChannel("c0", "Channel");
-  b0.AddChannel("c1", "Channel");
+  b0.CreateNode("n0", "Node");
+  b0.CreateNode("n1", "Node");
+  b0.CreateChannel("c0", "Channel");
+  b0.CreateChannel("c1", "Channel");
   // internally connect
-  b0.InternallyConnect("n0", "c0");
-  b0.InternallyConnect("n1", "c1");
+  b0.ConnectNodeToChannel("n0", "c0");
+  b0.ConnectNodeToChannel("n1", "c1");
 
   // create port
   b0.CreatePort("c0", "p0");
@@ -1173,8 +1362,259 @@ void multi_inner_node_test() {
   cout << builder.Build() << endl;
 }
 
+void box_self_port_connect_test() {
+  /* Multiple inner node connection
+   *
+   * b0
+   * +----------------+
+   * | n0 -> c0 -> [p0>--+
+   * | n1 -> c1 -> [p1>--|--+
+   * +----------------+  |  |
+   *                     |..|..merged channel decide by b0.c0
+   * b1                  |  |....merged channel decide by b0.c1
+   * +----------------+  |  |
+   * | n0 -> c0 -> [p0<--+  |
+   * | n1 -> c1 -> [p1<-----+
+   * |  |           ︙|
+   * |  +--> c2 -> [p2|  what is connection of p1 and p2
+   * +----------------+
+   *
+   * NOTE
+   * It would be necessary, first, that solve box internal connection?
+   * That would be equivalent following?
+   * ...
+   * | n1 -> c1 -> [p1|       | n1 ->|c1|-> [p1|
+   * |  |           ︙|       |      |  |    ︙|
+   * |  +--> c2 -> [p2|   ,   |      |c2|-> [p2|
+   * ...
+   * even included in the same box, both c1 and c2 should be merged.
+   */
+  // create box
+  Box b0("b0", "Box");
+  b0.CreateNode("n0", "Node");
+  b0.CreateNode("n1", "Node");
+  b0.CreateChannel("c0", "Channel");
+  b0.CreateChannel("c1", "Channel");
+  // internally connect
+  b0.ConnectNodeToChannel("n0", "c0");
+  b0.ConnectNodeToChannel("n1", "c1");
+
+  // create port
+  b0.CreatePort("c0", "p0");
+  b0.CreatePort("c1", "p1");
+  //b0.SetPortMaxConnection("p", 2);
+  
+  // fork
+  Box b1 = b0.Fork("b1");
+  b1.CreateChannel("c2", "Channel"); // would be merged with c1
+  b1.ConnectNodeToChannel("n1", "c2"); // n1 connect to c2
+  b1.CreatePort("c2", "p2");
+  b1.SetPortMaxConnection("p2", 2);
+  b1.ConnectPort("p1", b1, "p2"); // internal connection of "p1-to-p2" in "b1", TODO to be check
+  b0.ConnectPort("p0", b1, "p0");
+  b0.ConnectPort("p1", b1, "p2");
+
+  // builder instanciate
+  NsomBuilder builder("test-net");
+  builder.AddBox(b0);
+  builder.AddBox(b1);
+  cout << builder.Build() << endl;
+}
+
+void box_multiconnection() {
+  // create geteway
+  Box b0("b0", "Box");
+  b0.CreateNode("n0", "Node");
+  b0.CreateChannel("c0", "Channel");
+  b0.ConnectNodeToChannel("n0", "c0");
+  b0.CreatePort("c0", "p0")
+    .SetMaxConnection(10);
+  
+  vector<Box> boxs;
+  for (int i = 0; i<10; ++i) {
+    string name = string{} + "b" + std::to_string(i);
+    Box b(name, "Box");
+    b.CreateNode("n0", "Node");
+    b.CreateChannel("c0", "Channel");
+    b.ConnectNodeToChannel("n0", "c0");
+    b.CreatePort("c0", "p0");
+    // FIXME multi-connection
+    b.ConnectPort("p0", b0, "p0");
+    boxs.push_back(b);
+  }
+
+  // builder instanciate
+  NsomBuilder builder("test-net");
+  builder.AddBox(b0);
+  for (const auto& b : boxs) {
+    builder.AddBox(b);
+  }
+  cout << builder.Build() << endl;
+}
+
+void bridge_test() {
+  /* create switch-box */
+  Box b0("bridge", "SwitchBox");
+  b0.CreateNode("n0", "Node");
+  // channel creation and configuration for bridge
+  b0.CreateChannel("c0", "Csma")
+    .SetConfig({ {"Address", { {"Base", "192.168.10.1/24"}, {"Type", "NetworkUnique"} }}});
+  b0.CopyChannel("c0", "c1");
+  b0.CopyChannel("c0", "c2");
+  b0.TriConnect({"Switch"}, "n0", "c0", "p0");
+  b0.TriConnect({"Switch"}, "n0", "c1", "p1");
+  b0.TriConnect({"Switch"}, "n0", "c2", "p2");
+  
+  /* create terminal-box */
+  Box b1("b1", "TerminalBox");
+  b1.CreateNode("n0", "Node");
+  b1.CreateChannel("c0", "Channel");
+  b1.TriConnect("n0", "c0", "p0");
+  Box b2 = b1.Fork("b2");
+  Box b3 = b1.Fork("b3");
+
+  // set points
+  b0.SetPoint({10,10});
+  b1.SetPoint({10,0});
+  b2.SetPoint({0,20});
+  b3.SetPoint({20,20});
+
+  // connect box
+  b1.ConnectPort("p0", b0, "p0");
+  b2.ConnectPort("p0", b0, "p1");
+  b3.ConnectPort("p0", b0, "p2");
+
+  // NSOM build
+  NsomBuilder builder("TestNet");
+  builder.AddBox(b0);
+  builder.AddBox(b1);
+  builder.AddBox(b2);
+  builder.AddBox(b3);
+  cout << builder.Build() << endl;
+}
+void bridge_test2() {
+  // ISSUE box-type ordering for priority?
+  // e.g. BridgeBox > TerminalBox > ParentChild
+  // this would be used for channel merge.
+  //
+  // BoxTypeOrder box_order;
+  // order.SetOrder({
+  //   "BridgeBox",
+  //   "TerminalBox",
+  //   "Box"
+  // });
+  // NodeTypeOrder node_order;
+  // order.SetOrder({
+  //   "BridgeNode",
+  //   "TerminalNode",
+  //   "Node"
+  // });
+  // DefaultTypeOrder default_order;
+  // order.SetOrder({
+  //   "Bridge",
+  //   "Terminal",
+  //   "Node"
+  // });
+  // ??.SetOrder({
+  //   { Ordering::BoxType, "SwitchBox" },
+  //   { Ordering::BoxType, "TerminalBox" },
+  //   { Ordering::ParentChild }
+  // });
+  // builder.SetOrder(default_order);
+
+  // ordering for box type to use when channel merge
+  //boxtype_append("TerminalBox");
+  boxtype_append("SwitchBox");
+  boxtype_append("TerminalBox");
+
+  /* create switch-box */
+  Box b0("bridge", "SwitchBox");
+  b0.CreateNode("n0", "Node");
+  // channel creation and configuration for bridge
+  b0.CreateChannel("c0", "SwicthChannel")
+    .SetConfig({ {"Address", { {"Base", "192.168.10.1/24"}, {"Type", "NetworkUnique"} }}});
+  b0.TriConnect({"Switch"}, "n0", "c0", "p0");
+  
+  /* create terminal-box */
+  Box b1("b1", "TerminalBox");
+  b1.CreateNode("n0", "Node");
+  b1.CreateChannel("c0", "TerminalChannel");
+  b1.TriConnect("n0", "c0", "p0");
+
+  // set points
+  b0.SetPoint({10,10});
+  b1.SetPoint({10,0});
+
+  // connect box
+  b1.ConnectPort("p0", b0, "p0");
+
+  // NSOM build
+  NsomBuilder builder("TestNet");
+  builder.AddBox(b0);
+  builder.AddBox(b1);
+  cout << builder.Build() << endl;
+}
+
+void box_order_test() {
+
+  init();
+  
+  {
+    cout << "- Incomparable BoxType, Equality ParentChild" << endl;
+    cout << "  (-,Parent), (-,Parent)" << endl;
+    BoxPriority a{"", ParentChild::Parent};
+    BoxPriority b{"", ParentChild::Parent};
+    if (a > b) { cout << ">"; } else if(a < b) { cout << "<"; }
+    if (a == b) { cout << "=" << endl; } else { cout << "!=" << endl; }
+  }
+  {
+    cout << "- Equality BoxType, Equality ParentChild" << endl;
+    cout << "  (Terminal,Parent), (Terminal,Parent)" << endl;
+    BoxPriority a{"Terminal", ParentChild::Parent};
+    BoxPriority b{"Terminal", ParentChild::Parent};
+    if (a > b) { cout << ">"; } else if(a < b) { cout << "<"; }
+    if (a == b) { cout << "=" << endl; } else { cout << "!=" << endl; }
+  }
+  {
+    cout << "- Comparable BoxType, Equality ParentChild" << endl;
+    cout << "  (Terminal,Parent), (Switch,Parent)" << endl;
+    BoxPriority a{"Terminal", ParentChild::Parent};
+    BoxPriority b{"Switch", ParentChild::Parent};
+    if (a > b) { cout << ">"; } else if(a < b) { cout << "<"; }
+    if (a == b) { cout << "=" << endl; } else { cout << "!=" << endl; }
+  }
+  {
+    cout << "- Incomparable BoxType, Comparable ParentChild" << endl;
+    cout << "  Parent, Child" << endl;
+    BoxPriority a{"", ParentChild::Parent};
+    BoxPriority b{"", ParentChild::Child};
+    if (a > b) { cout << ">"; } else if(a < b) { cout << "<"; }
+    if (a == b) { cout << "=" << endl; } else { cout << "!=" << endl; }
+  }
+  {
+    cout << "- BoxType incomparable on one and not on the other, ParentChild is comparable" << endl;
+    cout << "  (Terminal,Child), (-,Parent)" << endl;
+    BoxPriority a{"Terminal", ParentChild::Child};
+    BoxPriority b{"", ParentChild::Parent};
+    if (a > b) { cout << ">"; } else if(a < b) { cout << "<"; }
+    if (a == b) { cout << "=" << endl; } else { cout << "!=" << endl; }
+  }
+  {
+    cout << "- BoxType incomparable on one and not on the other, ParentChild is comparable" << endl;
+    cout << "  (-,Child), (Terminal,Parent)" << endl;
+    BoxPriority a{"", ParentChild::Child};
+    BoxPriority b{"Terminal", ParentChild::Parent};
+    if (a > b) { cout << ">"; } else if(a < b) { cout << "<"; }
+    if (a == b) { cout << "=" << endl; } else { cout << "!=" << endl; }
+  }
+}
+
 void test() {
-  multi_inner_node_test();
+  //box_self_port_connect_test();
+  //box_multiconnection();
+  //bridge_test();
+  bridge_test2(); // TODO implement type comparison, Now Working!!
+  //box_order_test();
 }
 
 int main() {
