@@ -7,6 +7,11 @@
 #include <algorithm>
 #include <utility>
 #include <map>
+#include <typeinfo>
+#include <any>
+#include <variant>
+#include <boost/core/demangle.hpp>
+#include "ExceptionDecolater.hpp"
 
 using std::cout;
 using std::endl;
@@ -15,6 +20,8 @@ using std::string;
 using std::vector;
 using std::pair;
 using std::map;
+using std::type_info;
+using std::any;
 
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
@@ -345,9 +352,83 @@ struct Port {
   }
 };
 
+// associated event
+// premitive event
+// - Time
+// - Signal
+struct Time {
+  int value;
+  Time& operator+=(const Time& rhs) {
+    *this = *this + rhs;
+    return *this;
+  }
+  Time operator+(const Time& rhs) const {
+    return Time { value + rhs.value };
+  }
+  bool operator<(const Time& rhs) const {
+    return value < rhs.value;
+  }
+  bool operator> (const Time& rhs) const { return rhs < *this; }
+  bool operator<=(const Time& rhs) const { return !(*this > rhs); }
+  bool operator>=(const Time& rhs) const { return !(*this < rhs); }
+  bool operator==(const Time& rhs) const {
+    return value == rhs.value;
+  }
+  bool operator!=(const Time& rhs) const { return !(*this == rhs); }
+  string ToString() const {
+    std::stringstream ss;
+    ss << "Time{" << value << "}";
+    return ss.str();
+  }
+};
+
+struct Signal {
+  string value;
+  bool operator==(const Signal& rhs) const {
+    return value == rhs.value;
+  }
+  bool operator!=(const Signal& rhs) const { return !(*this == rhs); }
+  string ToString() const {
+    std::stringstream ss;
+    ss << "Signal{\"" << value << "\"}";
+    return ss.str();
+  }
+  bool operator<(const Signal& rhs) const {
+    return value < rhs.value;
+  }
+  bool operator> (const Signal& rhs) const { return rhs < *this; }
+  bool operator<=(const Signal& rhs) const { return !(*this > rhs); }
+  bool operator>=(const Signal& rhs) const { return !(*this < rhs); }
+};
+
+struct BootstrapAction {
+  bool operator==(const BootstrapAction& rhs) const {
+    return true;
+  }
+  bool operator!=(const BootstrapAction& rhs) const { return !(*this == rhs); }
+  const char* ToString() const {
+    return "BootstrapAction";
+  }
+  bool operator<(const BootstrapAction& rhs) const {
+    //return value < rhs.value;
+    return false;
+  }
+  bool operator> (const BootstrapAction& rhs) const { return rhs < *this; }
+  bool operator<=(const BootstrapAction& rhs) const { return !(*this > rhs); }
+  bool operator>=(const BootstrapAction& rhs) const { return !(*this < rhs); }
+};
+
+template<typename T>
+struct Range {
+  T start;
+  T stop;
+  T interval;
+};
+
+// box
 class Box {
 private:
-  // [TODO] 名前をポインタとして使ってしまっているので, 別途ポインタを用意したい.
+  // [TODO] 名前をポインタとして使ってしまっているので, 別途ポインタを用意する?
   string name_;
   string type_;
   Point point_;
@@ -396,6 +477,323 @@ public:
     return ret;
   }
 
+  Box Fork(string name, string type) const {
+    Box ret = *this;
+    ret.SetName(name);
+    ret.SetType(type);
+    return ret;
+  }
+
+  // PremitiveAction (ActionType, AppType)
+  struct PremitiveAction {
+    string type; // ActionType (NSOM-AppType)
+    json param;
+    PremitiveAction(string type, json param)
+    : type(type), param(param)
+    {
+      if ( not(param.is_null() or param.is_object()) ){
+        std::stringstream ss;
+        ss << "`params` of action must be json that ether null or object.";
+        throw std::logic_error(ss.str());
+      }
+    }
+    string ToString() const {
+      std::stringstream ss;
+      ss << "PreAct{"
+        << "type:" << type
+        << ",param:" << param
+        << "}";
+      return ss.str();
+    }
+    bool operator==(const PremitiveAction& rhs) const {
+      return (this->type == rhs.type and this->param == rhs.param);
+    }
+    bool operator!=(const PremitiveAction& rhs) const { return !(*this==rhs); }
+    bool operator<(const PremitiveAction& rhs) const {
+      if (this->type < rhs.type) return true;
+      if (this->param < rhs.param) return true;
+      if (this->type > rhs.type) return false;
+      if (this->param > rhs.param) return false;
+      return false;
+    }
+    bool operator> (const PremitiveAction& rhs) const { return rhs < *this; }
+    bool operator<=(const PremitiveAction& rhs) const { return !(*this > rhs); }
+    bool operator>=(const PremitiveAction& rhs) const { return !(*this < rhs); }
+  };
+
+  using ActionSpecifier=std::variant<PremitiveAction,Signal,BootstrapAction>;
+  static string ActionToString(const ActionSpecifier& act) {
+    std::stringstream ss;
+    ss << "Action{";
+    if (const auto& val = std::get_if<PremitiveAction>(&act)) {
+      ss << val->ToString();
+    } else if (const auto& val = std::get_if<Signal>(&act)) {
+      ss << val->ToString();
+    } else if (const auto& val = std::get_if<BootstrapAction>(&act)) {
+      ss << val->ToString();
+    } else {
+      throw std::logic_error("could not action to string!");
+    }
+    ss << "}";
+    return ss.str();
+  }
+ 
+  // BEGIN-TODO receive and action
+  // (premitive) Event [ Time(int) | Signal(int) ]
+  class Event {
+  public:
+    using Type = std::variant<Time,ActionSpecifier>;
+  private:
+    Type value_;
+  public:
+    Event(Time value): value_(value) {}
+    Event(ActionSpecifier value): value_(value) {}
+    const Type& value() const noexcept { return value_; }
+    bool operator==(const Event& rhs) const {
+      return this->value_==rhs.value_;
+    }
+    bool operator!=(const Event& rhs) const { return !(*this==rhs); }
+    string ToString() const {
+      if (auto&& time = std::get_if<Time>(&this->value_)) {
+        return time->ToString();
+      }
+      //if (auto&& sig = std::get_if<Signal>(&this->value_)) {
+      //  return sig->ToString();
+      //}
+      if (auto&& act = std::get_if<ActionSpecifier>(&this->value_)) {
+        return ActionToString(*act);
+      }
+      throw std::logic_error("exception: no support ToString convertion!");
+    }
+    bool operator<(const Event& rhs) const {
+      return this->value_ < rhs.value_;
+    }
+    bool operator> (const Event& rhs) const { return rhs < *this; }
+    bool operator<=(const Event& rhs) const { return !(*this > rhs); }
+    bool operator>=(const Event& rhs) const { return !(*this < rhs); }
+  };
+  // Event specifer is ether Time, Range<Time>
+  class EventSpecifer {
+    vector<Event> v_;
+  public:
+    EventSpecifer(Event evt) {
+      v_.push_back(evt);
+    }
+    EventSpecifer(Time time) {
+      v_.push_back(Event{time});
+    }
+    EventSpecifer(int time) {
+      v_.push_back(Event{Time{time}});
+    }
+    EventSpecifer(Signal id) {
+      v_.push_back(Event{id});
+    }
+    template<typename T>
+    EventSpecifer(Range<T> range) {
+      if (not (range.start <= range.stop)) throw std::logic_error(
+          "Range of event is invalid value "
+          "that it is not `start` less than equal `stop`."
+          );
+      for (T cur = range.start; cur < range.stop; cur += range.interval) {
+        this->v_.push_back(Event{cur});
+      }
+    }
+    vector<Event> value() const {
+      return v_;
+    }
+  };
+  struct DecolateEventBox {
+    Box& box;
+    vector<Event> evts;
+
+    DecolateEventBox Receive(EventSpecifer es) {
+      // experiment...
+      //GenerateEvent<Time>(evt);
+      vector<Event> v = es.value();
+      this->evts.insert(this->evts.end(), v.begin(), v.end());
+      return *this;
+    }
+    Box& Action(string act_type, json param) {
+      // generate application
+      // params: [ HandlerName, HandlerParameter ]
+      for (const auto& e : this->evts) {
+        box.Schedule(e, PremitiveAction{act_type, param});
+      }
+
+      return this->box;
+    }
+    Box& Action(Signal sig) {
+      for (const auto& e : this->evts) {
+        box.Schedule(e, sig);
+      }
+
+      return this->box;
+    }
+    //Box& Action(string sig) {
+    //  return Action(Signal{sig});
+    //}
+  };
+  // Box::Receive method is bootstrap of DecolateEventBox
+  DecolateEventBox Receive(EventSpecifer es) {
+    // for time, generate event
+    return DecolateEventBox{*this}.Receive(es);
+  }
+  // Task is move-only and use only via reference.
+  struct Task {
+    Event evt; // receive event
+    ActionSpecifier action; // action
+
+    string ToString() const {
+      std::stringstream ss;
+      ss << "Task{evt="
+        << evt.ToString()
+        << ",act="
+        << ActionToString(action)
+        << "}";
+      return ss.str();
+    };
+
+    bool operator==(const Task& rhs) const {
+      return (
+          evt == rhs.evt &&
+          action == rhs.action
+          );
+    }
+    bool operator!=(const Task& rhs) const {
+      return !(*this == rhs);
+    }
+  };
+  vector<Task> schedule;
+
+  // find tasks that have the event`evt` as a action.
+  vector<Task> FindTasksActionAs(const Event& evt) {
+    vector<Task> ret;
+    for (const auto& task : schedule) {
+      if (auto&& evt_act = std::get_if<ActionSpecifier>(&evt.value())) {
+        //cout << "[DEBUG] compare: "
+        //  << ActionToString(*evt_act) 
+        //  << " and "
+        //  << ActionToString(task.action)
+        //  << endl;
+        if (*evt_act != task.action) {
+          continue;
+        } else {
+          ret.push_back(task);
+          //cout << "[DEBUG] add: " << task.ToString() << endl;
+        }
+      } else {
+        throw std::logic_error("could get value from task.action as a type of Event");
+      }
+    }
+    return ret;
+  }
+
+  vector<Event> SearchPremitiveEvents(const Task& task, vector<Task>& breadcrumb) {
+    breadcrumb.push_back(task);
+    //cout << "[DEBUG] search from: " << task.ToString() << endl;
+    // if task.action is type of Time, resolve already!
+    if (std::get_if<Time>(&task.evt.value())) {
+      //cout << "[DEBUG] find!: " << task.ToString() << endl;
+      return {task.evt};
+    }
+
+    // resolve Event(parent would have Action) from parent Task recursive
+    vector<Event> ret;
+    for (const auto& parent_task : FindTasksActionAs(task.evt)) {
+      //cout << "[DEBUG] for parent task: " << parent_task.ToString() << endl;
+      // skip if parent task contains in breadcrumb
+      if (std::find(RANGE(breadcrumb), parent_task) != std::end(breadcrumb)) {
+        //cout << "[DEBUG] skip: " << parent_task.ToString() << endl;
+        continue;
+      }
+      auto&& evts = SearchPremitiveEvents(parent_task, breadcrumb);
+      ret.insert(ret.end(), RANGE(evts));
+    }
+
+    // delete duplicate events
+    {
+      std::sort(RANGE(ret));
+      auto last = std::unique(RANGE(ret));
+      ret.erase(last, ret.end());
+    }
+
+    //cout << "[DEBUG] current breadcrumb: " << breadcrumb.size() << endl;
+    //cout << "[DEBUG] signal of task resolved: " << ret.size() << endl;
+
+    return ret;
+  }
+  vector<Event> SearchPremitiveEvents(const Task& task) {
+    vector<Task> task_crumb; // avoid for duplication search
+    return SearchPremitiveEvents(task, task_crumb);
+  }
+
+  // not recommendation for user to use
+  void Schedule(Event evt, ActionSpecifier action) {
+    this->schedule.push_back(Task{evt, action});
+  }
+
+  string DumpSchedule() const {
+    std::stringstream ss;
+    for (const auto& task : schedule) {
+      ss << task.ToString() << endl;
+    }
+    return ss.str();
+  }
+
+  void ResolveSchedule() {
+    vector<Task> re_schedule;
+    // resolve signal in schedule
+
+    // resolve task.evt of Signal.
+
+    vector<ActionSpecifier> breadcrumb;
+    for (auto&& task : schedule) {
+      // except task that has Signal action!
+      if (not std::get_if<PremitiveAction>(&task.action)) continue;
+
+      //cout << "[DEBUG] Resolve one task" << endl;
+
+      if (std::find(RANGE(breadcrumb), task.action) != std::end(breadcrumb)) {
+        //cout << "[DEBUG] skip: " << task.ToString() << endl;
+        continue;
+      }
+      breadcrumb.push_back(task.action);
+      
+      // task schedule
+      
+      // aggregate premitive task
+      // create dummy task, because same action put together as a whole.
+      Task bse = Task{task.action, BootstrapAction{}};
+      for (auto&& evt : SearchPremitiveEvents(bse)) {
+                                            //^ bse aggregates same tasks
+        re_schedule.push_back(
+            std::move(Task{evt, task.action}));
+      }
+
+      // DEBUG
+      //for (const auto& task : re_schedule) {
+      //  cout << task.ToString() << endl;
+      //}
+
+    }
+
+    // sort by time
+    std::sort(re_schedule.begin(), re_schedule.end(),
+        [](Task a, Task b) {
+          if (
+              auto&& lhs = std::get_if<Time>(&a.evt.value());
+              auto&& rhs = std::get_if<Time>(&b.evt.value())
+          ) {
+            // note: lhs type is Time*, for Time, using to *lhs
+            return *lhs < *rhs;
+          }
+          throw std::logic_error("exception: sort failed!");
+        });
+    
+    this->schedule = re_schedule;
+  }
+  // END-TODO
+
   // resolve the merged channel from a channel.
   // channel_name is channel's name of a node-to-channel connection.
   // 1. search channel from inner box
@@ -413,7 +811,6 @@ public:
 
   }
 
-  // TODO
   vector<Netif> GenNodeConnList(const Node& node) const {
     vector<Netif> node_conn_list = node.GenConnList();
     // connection list of node-to-channel resolve to node-to-merged-channel
@@ -722,11 +1119,15 @@ public:
 
   // build ns-3 code
   string Build() {
-    // name mangling to avoid NSOM item's name conflict.
     vector<Box> boxs = boxs_;
     for (auto&& b : boxs) {
+      // name mangling to avoid NSOM item's name conflict.
       b.Mangle();
-      cout << b.ToString(100) << endl;
+      // resolve schedule
+      b.ResolveSchedule();
+
+      cout << "[DEBUG] " << b.ToString(100) << endl;
+      cout << "[DEBUG] " << b.DumpSchedule() << endl;
     }
 
     // TODO marge channel preprocess
@@ -737,7 +1138,7 @@ public:
     j["node"]    = GenNodeList(boxs);
     j["channel"] = GenChannelList(boxs);
     j["subnet"]  = GenSubnetList();
-    j["apps"]    = GenAppsList();
+    j["apps"]    = GenAppsList(boxs);
 
     cout << "[builder] build finish!" << endl;
     cout << "[builder] network name: "  << j["name"] << endl;
@@ -763,7 +1164,6 @@ public:
     return to_box.FindPort2(port.to_box_port).value();
   }
 
-  // TODO check
   BoxPriority ToBoxPriority(const Box& box, const Port2& port) {
     return {
       box.GetType(), (port.is_parent==1 ? ParentChild::Parent : ParentChild::Child)
@@ -793,8 +1193,8 @@ public:
     };
 
     // TODO merge
-    cout << "[DEBUG] parent_box " << parent_box.ToString(1) << endl;
-    cout << "[DEBUG] child_box " << child_box.ToString(1) << endl;
+    //cout << "[DEBUG] parent_box " << parent_box.ToString(1) << endl;
+    //cout << "[DEBUG] child_box " << child_box.ToString(1) << endl;
     BoxPriority bp_parent = ToBoxPriority(parent_box,parent_port);
     BoxPriority bp_child = ToBoxPriority(child_box,child_box_port);
 
@@ -872,7 +1272,7 @@ private:
     if (pt.z) j["point"]["z"] = pt.z.value();
 
     // set netifs
-    j["netifs"] = GenNetifs(box.GenNodeConnList(node)); // TODO check here
+    j["netifs"] = GenNetifs(box.GenNodeConnList(node));
 
     return j;
   }
@@ -904,7 +1304,6 @@ public:
       for (const auto& port : box.ports) {
         // set a node's name to a key,
         // the node's body create, and set
-        // TODO check for convertion result
         if (port.is_parent) {
           //Channel ch = GetMergeChannel(boxs, box, port);
           Channel ch = port.mchannel.value().value;
@@ -916,7 +1315,6 @@ public:
       for (const auto& ch : box.channels) {
         // set a node's name to a key,
         // the node's body create, and set
-        // TODO invastigate channel generation
         if (not ch.port) j[ch.name] = GenChannelBody(ch);
       }
     }
@@ -927,7 +1325,7 @@ public:
   json GenChannelBody(Channel channel) {
     json j;
     j["type"] = channel.type;
-    cout << "[DEBUG]" << channel.ToString(1) << endl;
+    //cout << "[DEBUG]" << channel.ToString(1) << endl;
     if (channel.config.is_object()) {
       j["config"] = channel.config;
     }
@@ -940,218 +1338,65 @@ public:
   json GenSubnetList() {
     return {};
   }
-  json GenAppsList() {
-    return {};
-  }
+  json GenAppsList(const vector<Box> boxs) {
+    json j;
+    for (const auto& box : boxs) {
+      int task_i = 0;
+      for (const auto& task : box.schedule) {
+        // skip Signal
+        //if (auto&& v = std::get_if<Signal>(&task.evt.value())) {
+        //  cout << "[builder] " << "skipped task of signal\n";
+        //  cout << "\tbox: " << box.ToString() << endl;
+        //  cout << "\ttask: " << task.ToString() << endl;
+        //  continue;
+        //}
+        // task convert to app
+        // Task { evt, action_type, params }
+        string task_name = box.GetName() + "_T" + std::to_string(task_i);
+        j[task_name] = GenAppBody(task);
+        ++task_i;
+      }
+    }
 
+    return j;
+  }
+  json GenAppBody(const Box::Task& task) {
+    json j;
+    try {
+      const auto& action = std::get<Box::PremitiveAction>(task.action);
+      j["type"] = action.type;
+      j["args"] = action.param;
+    }
+    catch (const std::bad_variant_access&) {
+      std::stringstream ss;
+      ss << "exception: task.action is not type of PremitiveAction!\n";
+      std::visit([&ss](auto&& arg) {
+          using T = std::decay_t<decltype(arg)>;
+          ss << "\ttask.action type: " << boost::core::demangle(typeid(T).name());
+          }, task.action);
+      throw std::logic_error(ss.str());
+    }
+    if (auto&& v = std::get_if<Time>(&task.evt.value())) {
+      const Time& time = *v;
+      j["args"]["start"] = time.value;
+    //} else if (auto&& v = std::get_if<Signal>(&task.evt.value())) {
+    //  const Signal& signal = *v;
+    //  j["args"]["signal"] = signal.value;
+    } else {
+      std::stringstream ss;
+      ss << "Could not generate application due to event type `";
+      std::visit([&ss](auto&& evt){
+          using T = decltype(evt);
+          ss << boost::core::demangle(typeid(T).name());
+          }, task.evt.value());
+      ss << "`." << endl;
+      ss << "It event is not implemented currently...";
+      throw std::runtime_error(ss.str());
+    }
+    return j;
+  }
 };
 
-void merge_channel_test() {
-  // create box
-  Box b0("b0", "Box");
-  b0.CreateNode("n", "Node");
-  b0.CreateChannel("c", "Channel");
-  // internally connect
-  b0.ConnectNodeToChannel("n", "c");
-
-  // create port
-  b0.CreatePort("c", "p");
-  // TODO to be studied
-  //b0.CreatePort("c", "c");
-  //b0.PortForward("c");
-  //b0.Portalize("c"); // otherwise
-  //b0.CreatePort("c"); // create and portalize to channel "c"
-  
-  // fork
-  Box b1 = b0.Fork("b1");
-
-  b0.ConnectPort("p", b1, "p");
-
-  // builder instanciate
-  NsomBuilder builder("test-net");
-  builder.AddBox(b0);
-  builder.AddBox(b1);
-  cout << builder.Build() << endl;
-}
-
-void multi_inner_node_test() {
-  /* multi inner node connection
-   *
-   * b0
-   * +----------------+
-   * | n0 -> c0 -> [p0|--+
-   * | n1 -> c1 -> [p1|--|--+
-   * +----------------+  |  |
-   *                     |  |
-   * b1                  |  |
-   * +----------------+  |  |
-   * | n0 -> c0 -> [p0|--+  |
-   * | n1 -> c1 -> [p1|-----+
-   * +----------------+
-   */
-  // create box
-  Box b0("b0", "Box");
-  b0.CreateNode("n0", "Node");
-  b0.CreateNode("n1", "Node");
-  b0.CreateChannel("c0", "Channel");
-  b0.CreateChannel("c1", "Channel");
-  // internally connect
-  b0.ConnectNodeToChannel("n0", "c0");
-  b0.ConnectNodeToChannel("n1", "c1");
-
-  // create port
-  b0.CreatePort("c0", "p0");
-  b0.CreatePort("c1", "p1");
-  //b0.SetPortMaxConnection("p", 2);
-  // TODO to be studied
-  //b0.CreatePort("c", "c");
-  //b0.PortForward("c");
-  //b0.Portalize("c"); // otherwise
-  //b0.CreatePort("c"); // create and portalize to channel "c"
-  
-  // fork
-  Box b1 = b0.Fork("b1");
-
-  b0.ConnectPort("p0", b1, "p0");
-  b0.ConnectPort("p1", b1, "p1");
-
-  // builder instanciate
-  NsomBuilder builder("test-net");
-  builder.AddBox(b0);
-  builder.AddBox(b1);
-  cout << builder.Build() << endl;
-}
-
-void box_self_port_connect_test() {
-  /* Multiple inner node connection
-   *
-   * b0
-   * +----------------+
-   * | n0 -> c0 -> [p0>--+
-   * | n1 -> c1 -> [p1>--|--+
-   * +----------------+  |  |
-   *                     |..|..merged channel decide by b0.c0
-   * b1                  |  |....merged channel decide by b0.c1
-   * +----------------+  |  |
-   * | n0 -> c0 -> [p0<--+  |
-   * | n1 -> c1 -> [p1<-----+
-   * |  |           ︙|
-   * |  +--> c2 -> [p2|  what is connection of p1 and p2
-   * +----------------+
-   *
-   * NOTE
-   * It would be necessary, first, that solve box internal connection?
-   * That would be equivalent following?
-   * ...
-   * | n1 -> c1 -> [p1|       | n1 ->|c1|-> [p1|
-   * |  |           ︙|       |      |  |    ︙|
-   * |  +--> c2 -> [p2|   ,   |      |c2|-> [p2|
-   * ...
-   * even included in the same box, both c1 and c2 should be merged.
-   */
-  // create box
-  Box b0("b0", "Box");
-  b0.CreateNode("n0", "Node");
-  b0.CreateNode("n1", "Node");
-  b0.CreateChannel("c0", "Channel");
-  b0.CreateChannel("c1", "Channel");
-  // internally connect
-  b0.ConnectNodeToChannel("n0", "c0");
-  b0.ConnectNodeToChannel("n1", "c1");
-
-  // create port
-  b0.CreatePort("c0", "p0");
-  b0.CreatePort("c1", "p1");
-  //b0.SetPortMaxConnection("p", 2);
-  
-  // fork
-  Box b1 = b0.Fork("b1");
-  b1.CreateChannel("c2", "Channel"); // would be merged with c1
-  b1.ConnectNodeToChannel("n1", "c2"); // n1 connect to c2
-  b1.CreatePort("c2", "p2");
-  b1.SetPortMaxConnection("p2", 2);
-  b1.ConnectPort("p1", b1, "p2"); // internal connection of "p1-to-p2" in "b1", TODO to be check
-  b0.ConnectPort("p0", b1, "p0");
-  b0.ConnectPort("p1", b1, "p2");
-
-  // builder instanciate
-  NsomBuilder builder("test-net");
-  builder.AddBox(b0);
-  builder.AddBox(b1);
-  cout << builder.Build() << endl;
-}
-
-void box_multiconnection() {
-  // create geteway
-  Box b0("b0", "Box");
-  b0.CreateNode("n0", "Node");
-  b0.CreateChannel("c0", "Channel");
-  b0.ConnectNodeToChannel("n0", "c0");
-  b0.CreatePort("c0", "p0")
-    .SetMaxConnection(10);
-  
-  vector<Box> boxs;
-  for (int i = 0; i<10; ++i) {
-    string name = string{} + "b" + std::to_string(i);
-    Box b(name, "Box");
-    b.CreateNode("n0", "Node");
-    b.CreateChannel("c0", "Channel");
-    b.ConnectNodeToChannel("n0", "c0");
-    b.CreatePort("c0", "p0");
-    // FIXME multi-connection
-    b.ConnectPort("p0", b0, "p0");
-    boxs.push_back(b);
-  }
-
-  // builder instanciate
-  NsomBuilder builder("test-net");
-  builder.AddBox(b0);
-  for (const auto& b : boxs) {
-    builder.AddBox(b);
-  }
-  cout << builder.Build() << endl;
-}
-
-void bridge_test() {
-  /* create switch-box */
-  Box b0("bridge", "SwitchBox");
-  b0.CreateNode("n0", "Node");
-  // channel creation and configuration for bridge
-  b0.CreateChannel("c0", "Csma")
-    .SetConfig({ {"Address", { {"Base", "192.168.10.1/24"}, {"Type", "NetworkUnique"} }}});
-  b0.CopyChannel("c0", "c1");
-  b0.CopyChannel("c0", "c2");
-  b0.TriConnect({"Switch"}, "n0", "c0", "p0");
-  b0.TriConnect({"Switch"}, "n0", "c1", "p1");
-  b0.TriConnect({"Switch"}, "n0", "c2", "p2");
-  
-  /* create terminal-box */
-  Box b1("b1", "TerminalBox");
-  b1.CreateNode("n0", "Node");
-  b1.CreateChannel("c0", "Channel");
-  b1.TriConnect("n0", "c0", "p0");
-  Box b2 = b1.Fork("b2");
-  Box b3 = b1.Fork("b3");
-
-  // set points
-  b0.SetPoint({10,10});
-  b1.SetPoint({10,0});
-  b2.SetPoint({0,20});
-  b3.SetPoint({20,20});
-
-  // connect box
-  b1.ConnectPort("p0", b0, "p0");
-  b2.ConnectPort("p0", b0, "p1");
-  b3.ConnectPort("p0", b0, "p2");
-
-  // NSOM build
-  NsomBuilder builder("TestNet");
-  builder.AddBox(b0);
-  builder.AddBox(b1);
-  builder.AddBox(b2);
-  builder.AddBox(b3);
-  cout << builder.Build() << endl;
-}
 void bridge_test2() {
   // ISSUE box-type ordering for priority?
   // e.g. BridgeBox > TerminalBox > ParentChild
@@ -1215,66 +1460,201 @@ void bridge_test2() {
   cout << builder.Build() << endl;
 }
 
-void box_order_test() {
+void receive_and_action_test() {
+  Box b0("b0", "Box");
+  b0.CreateNode("n0", "Node");
+  b0.CreateChannel("c0", "Csma");
+  b0.TriConnect("n0", "c0", "p0");
+  Box b1 = b0.Fork("b1");
+  b0.ConnectPort("p0", b1, "p0");
 
-  init();
+  // schedule test
+  json ping_param = {
+    {"dhost", "${_Bb0_Nn0}" }, // TODO resolve node name
+    //         ^ b0 ... as box, ping handler receive it?
+    {"dport", 8080 },
+    {"time" , 5 },
+    {"rate" , "1Mbps" }
+  };
+  //b0.Receive(5)
+  //  .Action("ping", ping_param)
+  //  .Receive(10)
+  //  .Action("ping", ping_param)
+  //  ;
+  //b0.Schedule(Time{15}, "ping", {{"shost", "${_Bb0_Nn0}"}});
+
+  b0.Receive(Range<Time>{5, 15, 5}) // expanded to [5,10,15]
+    .Action("Ping", ping_param)
+    ;
   
-  {
-    cout << "- Incomparable BoxType, Equality ParentChild" << endl;
-    cout << "  (-,Parent), (-,Parent)" << endl;
-    BoxPriority a{"", ParentChild::Parent};
-    BoxPriority b{"", ParentChild::Parent};
-    if (a > b) { cout << ">"; } else if(a < b) { cout << "<"; }
-    if (a == b) { cout << "=" << endl; } else { cout << "!=" << endl; }
-  }
-  {
-    cout << "- Equality BoxType, Equality ParentChild" << endl;
-    cout << "  (Terminal,Parent), (Terminal,Parent)" << endl;
-    BoxPriority a{"Terminal", ParentChild::Parent};
-    BoxPriority b{"Terminal", ParentChild::Parent};
-    if (a > b) { cout << ">"; } else if(a < b) { cout << "<"; }
-    if (a == b) { cout << "=" << endl; } else { cout << "!=" << endl; }
-  }
-  {
-    cout << "- Comparable BoxType, Equality ParentChild" << endl;
-    cout << "  (Terminal,Parent), (Switch,Parent)" << endl;
-    BoxPriority a{"Terminal", ParentChild::Parent};
-    BoxPriority b{"Switch", ParentChild::Parent};
-    if (a > b) { cout << ">"; } else if(a < b) { cout << "<"; }
-    if (a == b) { cout << "=" << endl; } else { cout << "!=" << endl; }
-  }
-  {
-    cout << "- Incomparable BoxType, Comparable ParentChild" << endl;
-    cout << "  Parent, Child" << endl;
-    BoxPriority a{"", ParentChild::Parent};
-    BoxPriority b{"", ParentChild::Child};
-    if (a > b) { cout << ">"; } else if(a < b) { cout << "<"; }
-    if (a == b) { cout << "=" << endl; } else { cout << "!=" << endl; }
-  }
-  {
-    cout << "- BoxType incomparable on one and not on the other, ParentChild is comparable" << endl;
-    cout << "  (Terminal,Child), (-,Parent)" << endl;
-    BoxPriority a{"Terminal", ParentChild::Child};
-    BoxPriority b{"", ParentChild::Parent};
-    if (a > b) { cout << ">"; } else if(a < b) { cout << "<"; }
-    if (a == b) { cout << "=" << endl; } else { cout << "!=" << endl; }
-  }
-  {
-    cout << "- BoxType incomparable on one and not on the other, ParentChild is comparable" << endl;
-    cout << "  (-,Child), (Terminal,Parent)" << endl;
-    BoxPriority a{"", ParentChild::Child};
-    BoxPriority b{"Terminal", ParentChild::Parent};
-    if (a > b) { cout << ">"; } else if(a < b) { cout << "<"; }
-    if (a == b) { cout << "=" << endl; } else { cout << "!=" << endl; }
-  }
+  b1.Receive(1)
+    .Action("Sink", {{"port",8080},{"time",30}})
+    ;
+
+  // TODO signal (rough draft)
+  //b1.Receive(Signal{"dummy"})
+  //  .Action("Signal", {{"param1",123},{"param2","abc"}})
+  //  ;
+
+  NsomBuilder builder("TestNet");
+  builder.AddBox(b0);
+  builder.AddBox(b1);
+  cout << builder.Build() << endl;
 }
 
+void signal_test() {
+  Box Base("sender_base", "Base");
+  Base.CreateNode("n0", "Node");
+  Base.CreateChannel("c0", "PointToPoint");
+  Base.TriConnect("n0", "c0", "p0");
+
+  Box sender = Base.Fork("sender", "Sender");
+  Box sinker = Base.Fork("sinker", "Sinker");
+  sender.ConnectPort("p0", sinker, "p0");
+
+  sender
+    .Receive(Time{1}).Action(Signal{"Sig1"})
+    .Receive(Time{1}).Action(Signal{"Sig2"})
+    .Receive(Time{2}).Action(Signal{"Sig1"})
+    .Receive(Signal{"Sig1"}).Action(Signal{"Sig3"})
+    .Receive(Signal{"Sig2"}).Action("Pre1", {})
+    //.Receive(Signal{"Sig2"}).Action(Signal{"Sig4"})
+    .Receive(Signal{"Sig3"}).Action("Pre1", {})
+    .Receive(Signal{"Sig3"}).Action(Signal{"Sig2"})
+    ;
+  //sender
+  //  .Receive(Signal{"Sig1"})
+  //  .Action("Pre1", {})
+  //  .Receive(Signal{"Sig2"})
+  //  .Action("Pre1", {})
+  //  ;
+  //sender
+  //  .Receive(Time{1}).Action(Signal{"Sig1"})
+  //  .Receive(Time{2}).Action(Signal{"Sig2"})
+  //  ;
+
+  NsomBuilder builder("TestNet");
+  builder.AddBox(sender);
+  builder.AddBox(sinker);
+  cout << builder.Build() << endl;
+}
+
+void nic_switch_test() {
+  // create base box
+  Box RouteSwitch("route_switch_base", "RouteSwitch");
+  Box Router("router_base", "Router");
+  Box Sinker("sinker_base", "Sinker");
+
+  // TODO implement ANY-channel
+  // create node and channel over the box.
+  RouteSwitch.CreateNode("n0", "Node");
+  RouteSwitch.CreateChannel("c0", "ANY");
+  RouteSwitch.CreateChannel("c1", "ANY");
+  RouteSwitch.TriConnect("n0", "c0", "p0");
+  RouteSwitch.TriConnect("n0", "c1", "p1");
+
+  Router.CreateNode("n0", "Node");
+  Router.CreateChannel("c0", "Csma");
+  Router.CreateChannel("c1", "Csma");
+  Router.TriConnect("n0", "c0", "p0");
+  Router.TriConnect("n0", "c1", "p1");
+
+  Sinker.CreateNode("n0", "Node");
+  Sinker.CreateChannel("c0", "ANY");
+  Sinker.CreateChannel("c1", "ANY");
+  Sinker.TriConnect("n0", "c0", "p0");
+  Sinker.TriConnect("n0", "c1", "p1");
+  Sinker
+    .Receive(Signal{"Start"})
+    .Action("Sink", {{"port",8080},{"time",30}})
+    ;
+
+  // preparate application(schedule)
+  RouteSwitch
+    .Receive(Signal{"SwitchPort0"})
+    .Action("NicCtl", {{"idx", "1"},{"enable", "0"}})
+    .Receive(Signal{"SwitchPort0"})
+    .Action("NicCtl", {{"idx", "0"},{"enable", "1"}})
+
+    .Receive(Signal{"SwitchPort1"})
+    .Action("NicCtl", {{"idx", "0"},{"enable", "0"}})
+    .Receive(Signal{"SwitchPort1"})
+    .Action("NicCtl", {{"idx", "1"},{"enable", "1"}})
+    ;
+
+  // topology
+  //
+  //  RS              Router      Sinker
+  // ┌─────┐         ┌─────┐     ┌─────┐
+  // │   p0│─────────│p0 p1│─────│p0   │
+  // │   p1│────┐    └─────┘    ┌│p1   │
+  // └─────┘    │    ┌─────┐    │└─────┘
+  //            └────│p0 p1│────┘
+  //                 └─────┘
+  //
+  
+  Box rs = RouteSwitch.Fork("rs");
+  Box r0 = Router.Fork("r0");
+  Box r1 = Router.Fork("r1");
+  Box s0 = Sinker.Fork("s0");
+
+  rs.ConnectPort("p0", r0, "p0");
+  rs.ConnectPort("p1", r1, "p0");
+
+  s0.ConnectPort("p0", r0, "p1");
+  s0.ConnectPort("p1", r1, "p1");
+
+  // schedule
+  rs
+    .Receive(Time{5})
+    .Action(Signal{"SwitchPort0"})
+    .Receive(Time{10})
+    .Action(Signal{"SwitchPort1"})
+    ;
+  //rs
+  //  .Receive(Range<Time>{5,35,10})
+  //  .Schedule([](auto&rs){rs
+  //    .Receive(Time{0})
+  //    .Action(Signal{"SwitchPort0"})
+  //    .Receive(Time{5})
+  //    .Action(Signal{"SwitchPort1"})
+  //  })
+  //  ;
+
+  // TODO Simulation Start Signal
+  //s0.Receive(1)
+  //  .Action(Signal{"Start"})
+  //  ;
+
+  // DEBUG
+  cout << "[DEBUG Schedule]" << endl;
+  cout << rs.DumpSchedule() << endl;
+
+  // build
+  NsomBuilder builder("TestNet");
+  builder.AddBox(rs);
+  builder.AddBox(r0);
+  builder.AddBox(r1);
+  builder.AddBox(s0);
+  cout << builder.Build() << endl;
+}
+
+
 void test() {
-  //box_self_port_connect_test();
-  //box_multiconnection();
-  //bridge_test();
-  bridge_test2(); // TODO implement type comparison, Now Working!!
-  //box_order_test();
+  // logic_error: library responsibility
+  // runtime_error: user responsibility
+  try{
+  //receive_and_action_test();
+  //signal_test();
+  nic_switch_test();
+  }catch(const std::exception& e) {
+    std::cerr
+      //<< e.what()
+      << edc::HonhimaDecolate(e).what()
+      //<< edc::HondaDecolate(e).what()
+      << std::flush;
+  }
+  cout << "バグなし！生きてるだけで勝ち🌻" << endl;
 }
 
 int main() {
