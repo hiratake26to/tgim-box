@@ -27,6 +27,11 @@ using std::any;
 using json = nlohmann::json;
 
 #define RANGE(v) v.begin(), v.end()
+#define UNIQUE(v) {\
+  std::sort(RANGE(v));\
+  auto last = std::unique(RANGE(v));\
+  v.erase(last, v.end());\
+}
 
 
 // Box型が順序付けされていれば BoxType
@@ -358,6 +363,7 @@ struct Port {
 // - Signal
 struct Time {
   int value;
+  Time(int t): value(t) {}
   Time& operator+=(const Time& rhs) {
     *this = *this + rhs;
     return *this;
@@ -423,6 +429,8 @@ struct Range {
   T start;
   T stop;
   T interval;
+  Range(T start, T stop, T interval): start(start), stop(stop), interval(interval) {}
+  Range(T start, T stop): Range(start, stop, 1) {}
 };
 
 // box
@@ -521,7 +529,21 @@ public:
     bool operator>=(const PremitiveAction& rhs) const { return !(*this < rhs); }
   };
 
-  using ActionSpecifier=std::variant<PremitiveAction,Signal,BootstrapAction>;
+  struct Task; //prototype
+  //using Schedule=vector<Task>;
+  using SignalTable=vector<Task>;
+  struct Schedule {
+    vector<Task> list;
+    vector<Task> sigtbl;
+    bool operator==(const Schedule& rhs) const {
+      return (this->list == rhs.list and this->sigtbl == rhs.sigtbl);
+    }
+    bool operator!=(const Schedule& rhs) const { return !(*this==rhs); }
+  };
+
+  Schedule schedule_;
+
+  using ActionSpecifier=std::variant<PremitiveAction,Signal,Schedule>;
   static string ActionToString(const ActionSpecifier& act) {
     std::stringstream ss;
     ss << "Action{";
@@ -529,26 +551,32 @@ public:
       ss << val->ToString();
     } else if (const auto& val = std::get_if<Signal>(&act)) {
       ss << val->ToString();
-    } else if (const auto& val = std::get_if<BootstrapAction>(&act)) {
-      ss << val->ToString();
+    } else if (const auto& val = std::get_if<Schedule>(&act)) {
+      ss << "Schedule{...}";
     } else {
       throw std::logic_error("could not action to string!");
     }
     ss << "}";
     return ss.str();
   }
- 
-  // BEGIN-TODO receive and action
+  // BEGIN-Schedule, receive and action
   // (premitive) Event [ Time(int) | Signal(int) ]
   class Event {
   public:
-    using Type = std::variant<Time,ActionSpecifier>;
+    using Type = std::variant<Time,Signal>;
   private:
     Type value_;
   public:
     Event(Time value): value_(value) {}
-    Event(ActionSpecifier value): value_(value) {}
+    Event(Signal value): value_(value) {}
     const Type& value() const noexcept { return value_; }
+    Event operator+(const Event& rhs) const {
+      if (auto&& lhs_val = std::get_if<Time>(&this->value_))
+      if (auto&& rhs_val = std::get_if<Time>(&rhs.value_)) {
+        return {*lhs_val + *rhs_val};
+      }
+      throw std::logic_error("exception: operator `+` use only to Time");
+    }
     bool operator==(const Event& rhs) const {
       return this->value_==rhs.value_;
     }
@@ -557,11 +585,8 @@ public:
       if (auto&& time = std::get_if<Time>(&this->value_)) {
         return time->ToString();
       }
-      //if (auto&& sig = std::get_if<Signal>(&this->value_)) {
-      //  return sig->ToString();
-      //}
-      if (auto&& act = std::get_if<ActionSpecifier>(&this->value_)) {
-        return ActionToString(*act);
+      if (auto&& sig = std::get_if<Signal>(&this->value_)) {
+        return sig->ToString();
       }
       throw std::logic_error("exception: no support ToString convertion!");
     }
@@ -617,17 +642,32 @@ public:
       // generate application
       // params: [ HandlerName, HandlerParameter ]
       for (const auto& e : this->evts) {
-        box.Schedule(e, PremitiveAction{act_type, param});
+        box.AddTask(e, PremitiveAction{act_type, param});
       }
 
       return this->box;
     }
     Box& Action(Signal sig) {
       for (const auto& e : this->evts) {
-        box.Schedule(e, sig);
+        box.AddTask(e, sig);
       }
 
       return this->box;
+    }
+    Box& Action(Schedule sdl) {
+      for (const auto& e : this->evts) {
+        box.AddTask(e, sdl);
+      }
+
+      return this->box;
+    }
+    Box& Schedule(const std::function<void(Box&)>& cb) {
+      // TODO How to schedule?????
+      Box box = this->box;
+      cb(box);
+      //cout << "[DEBUG] " << endl;
+      //cout << box.DumpSchedule() << endl;
+      return Action(box.GetSchedule());
     }
     //Box& Action(string sig) {
     //  return Action(Signal{sig});
@@ -638,6 +678,7 @@ public:
     // for time, generate event
     return DecolateEventBox{*this}.Receive(es);
   }
+
   // Task is move-only and use only via reference.
   struct Task {
     Event evt; // receive event
@@ -663,32 +704,38 @@ public:
       return !(*this == rhs);
     }
   };
-  vector<Task> schedule;
 
   // find tasks that have the event`evt` as a action.
-  vector<Task> FindTasksActionAs(const Event& evt) {
+  // T: parent task.aciton type
+  // U: type of variant
+  template<typename T, typename U>
+  static vector<Task> FindTasksActionAs(const vector<Task>& tasks, const U& value) {
     vector<Task> ret;
-    for (const auto& task : schedule) {
-      if (auto&& evt_act = std::get_if<ActionSpecifier>(&evt.value())) {
+    if (auto&& evt_act = std::get_if<T>(&value)) {
+      for (const auto& task : tasks)
+      if (auto&& task_act = std::get_if<T>(&task.action)) {
         //cout << "[DEBUG] compare: "
         //  << ActionToString(*evt_act) 
         //  << " and "
         //  << ActionToString(task.action)
         //  << endl;
-        if (*evt_act != task.action) {
+        if (*task_act != *evt_act) {
           continue;
         } else {
           ret.push_back(task);
           //cout << "[DEBUG] add: " << task.ToString() << endl;
         }
-      } else {
-        throw std::logic_error("could get value from task.action as a type of Event");
       }
+    } else {
+      std::stringstream ss;
+      ss << "exception: faild to find tasks due to get value as type of Signal";
+      throw std::logic_error(ss.str());
     }
+
     return ret;
   }
 
-  vector<Event> SearchPremitiveEvents(const Task& task, vector<Task>& breadcrumb) {
+  static vector<Event> SearchPremitiveEvents(const vector<Task>& sdl, const Task& task, vector<Task>& breadcrumb) {
     breadcrumb.push_back(task);
     //cout << "[DEBUG] search from: " << task.ToString() << endl;
     // if task.action is type of Time, resolve already!
@@ -699,14 +746,14 @@ public:
 
     // resolve Event(parent would have Action) from parent Task recursive
     vector<Event> ret;
-    for (const auto& parent_task : FindTasksActionAs(task.evt)) {
+    for (const auto& parent_task : FindTasksActionAs<Signal>(sdl, task.evt.value())) {
       //cout << "[DEBUG] for parent task: " << parent_task.ToString() << endl;
       // skip if parent task contains in breadcrumb
       if (std::find(RANGE(breadcrumb), parent_task) != std::end(breadcrumb)) {
         //cout << "[DEBUG] skip: " << parent_task.ToString() << endl;
         continue;
       }
-      auto&& evts = SearchPremitiveEvents(parent_task, breadcrumb);
+      auto&& evts = SearchPremitiveEvents(sdl, parent_task, breadcrumb);
       ret.insert(ret.end(), RANGE(evts));
     }
 
@@ -722,33 +769,191 @@ public:
 
     return ret;
   }
-  vector<Event> SearchPremitiveEvents(const Task& task) {
+  vector<Event> SearchPremitiveEvents(const vector<Task>& sdl, const Task& task) const {
     vector<Task> task_crumb; // avoid for duplication search
-    return SearchPremitiveEvents(task, task_crumb);
+    return SearchPremitiveEvents(sdl, task, task_crumb);
   }
 
+private:
   // not recommendation for user to use
-  void Schedule(Event evt, ActionSpecifier action) {
-    this->schedule.push_back(Task{evt, action});
+  void AddTask(Event evt, ActionSpecifier action) {
+    if (std::get_if<Signal>(&evt.value())) {
+      this->schedule_.sigtbl.push_back(Task{evt, action});
+    } else {
+      this->schedule_.list.push_back(Task{evt, action});
+    }
+  }
+public:
+  Schedule GetSchedule() const {
+    return this->schedule_;
   }
 
   string DumpSchedule() const {
     std::stringstream ss;
-    for (const auto& task : schedule) {
+    ss << "#list" << endl;
+    for (const auto& task : schedule_.list) {
+      ss << task.ToString() << endl;
+    }
+    ss << "#sigtbl" << endl;
+    for (const auto& task : schedule_.sigtbl) {
       ss << task.ToString() << endl;
     }
     return ss.str();
   }
 
+  // TODO TODO
+  // find task that arg's task firing
+  static vector<Event> SearchSignalEvents(
+      const SignalTable& sigtbl, const Signal& target, const Task& task, vector<Task>& breadcrumb) 
+  {
+    breadcrumb.push_back(task);
+    //cout << "[DEBUG] search from: " << task.ToString() << endl;
+    // if task.action is type of Time, resolve already!
+    if (auto&& sig = std::get_if<Signal>(&task.evt.value())) {
+      if (*sig == target) {
+        //cout << "[DEBUG] find!: " << task.ToString() << endl;
+        return {task.evt};
+      }
+    }
+
+    // resolve Event(parent would have Action) from parent Task recursive
+    vector<Event> ret;
+    for (const auto& parent_task : FindTasksActionAs<Signal>(sigtbl, task.evt.value())) {
+      //cout << "[DEBUG] for parent task: " << parent_task.ToString() << endl;
+      // skip if parent task contains in breadcrumb
+      if (std::find(RANGE(breadcrumb), parent_task) != std::end(breadcrumb)) {
+        //cout << "[DEBUG] skip: " << parent_task.ToString() << endl;
+        continue;
+      }
+      auto&& evts = SearchSignalEvents(sigtbl, target, parent_task, breadcrumb);
+      ret.insert(ret.end(), RANGE(evts));
+    }
+
+    // delete duplicate events
+    UNIQUE(ret);
+
+    //cout << "[DEBUG] current breadcrumb: " << breadcrumb.size() << endl;
+    //cout << "[DEBUG] signal of task resolved: " << ret.size() << endl;
+
+    return ret;
+  }
+  vector<Event> SearchSignalEvents(const SignalTable& sigtbl, const Signal& target, const Task& task) const {
+    vector<Task> task_crumb; // avoid for duplication search
+    return SearchSignalEvents(sigtbl, target, task, task_crumb);
+  }
+  vector<Task> ResolveSignal(const SignalTable& sigtbl, const Task& parent) const {
+    
+    // 1. prepere sigtbl task list,
+    // Task { Signal, PreAct }
+    // task has premitive action
+    // 2. parent task's action to compare with sigtbl
+    // return it if a task found in sigtbl, that equality parent task's action
+    // return none if not found
+    
+    vector<Task> ret;
+  
+    // resolve task.evt of Signal.
+    vector<ActionSpecifier> breadcrumb;
+    for (const auto& task : sigtbl) {
+      // handle only task that has premitive-action!
+      if (not std::get_if<PremitiveAction>(&task.action)) continue;
+      //cout << "[DEBUG] Resolve one task" << endl;
+      if (std::find(RANGE(breadcrumb), task.action) != std::end(breadcrumb)) {
+        //cout << "[DEBUG] skip: " << task.ToString() << endl;
+        continue;
+      }
+      breadcrumb.push_back(task.action);
+
+      // aggregate premitive task
+      // tasks that have same premitive-action put together as a whole.
+      vector<Task> aggre_preact = FindTasksActionAs<PremitiveAction>(sigtbl, task.action);
+      vector<Event> acc_evt;
+      for (auto&& preact: aggre_preact) {
+        auto&& result = SearchSignalEvents(sigtbl, std::get<Signal>(parent.action), preact);
+        acc_evt.insert(acc_evt.end(), RANGE(result));
+      }
+      // delete duplicate events
+      UNIQUE(acc_evt);
+
+      for (auto&& evt : acc_evt) {
+        ret.push_back(
+            std::move(Task{evt, task.action}));
+      }
+    }
+
+    // TODO debug!!
+    return ret;
+  }
+  static Schedule ConcatSigtable(const Schedule& lhs, const Schedule& rhs) {
+    Schedule ret = lhs;
+    ret.sigtbl.insert(ret.sigtbl.end(), RANGE(rhs.sigtbl));
+    return std::move(ret);
+  }
+  vector<Task> ResolveScheduleToTask(const Schedule& sdl) const {
+    vector<Task> ret;
+    for (auto&& task : sdl.list) {
+      // Premitive task
+      if (std::get_if<PremitiveAction>(&task.action)) {
+        ret.push_back(task);
+        continue;
+      }
+      // task's Action with Signal
+      if (std::get_if<Signal>(&task.action)) {
+        auto&& result = ResolveSignal(sdl.sigtbl, task);
+        ret.insert(ret.end(), RANGE(result));
+        continue;
+      }
+      // task is Schedule
+      if (auto&& nested_sdl = std::get_if<Schedule>(&task.action)) {
+        Schedule temp = ConcatSigtable(sdl, *nested_sdl);
+        auto&& result = ResolveScheduleToTask(temp);
+        if (result.size() > 0) {
+          ret.insert(ret.end(), RANGE(result));
+        }
+        continue;
+      }
+    }
+
+    return ret;
+  }
+  vector<Task> ResolveScheduleToTask() const {
+    return ResolveScheduleToTask(this->schedule_);
+  }
+  // TODO TODO-END
   void ResolveSchedule() {
+    Schedule ret;
+    //// TODO resolve nested schedule
+    //for (auto&& task : this->schedule_.list) {
+    //  if (auto&& sdl = std::get_if<Schedule>(&task.action)) {
+    //    Schedule sdl_and_sig = *sdl;
+    //    sdl_and_sig.insert(sdl_and_sig.end(), RANGE(sigtbl_));
+    //    auto&& result = ResolveTask(sdl_and_sig, task.evt);
+    //    // DEBUG
+    //    cout << "[DEBUG] result:" << endl;
+    //    for (const auto& task : result) {
+    //      cout << task.ToString() << endl;
+    //    }
+    //    ret.insert(ret.end(), RANGE(result));
+    //  }
+    //}
+
+    //// resolve top-level schedule
+    //Schedule sdl_and_sig = this->schedule_;
+    //sdl_and_sig.insert(sdl_and_sig.end(), RANGE(sigtbl_));
+    //auto&& result = ResolveTask(this->schedule_, Event{Time{0}});
+    //ret.insert(ret.end(), RANGE(result));
+
+    this->schedule_ = std::move(ret);
+  }
+private:
+  vector<Task> ResolveTask(const vector<Task>& sdl, const Event& header_evt) const {
     vector<Task> re_schedule;
     // resolve signal in schedule
 
     // resolve task.evt of Signal.
-
     vector<ActionSpecifier> breadcrumb;
-    for (auto&& task : schedule) {
-      // except task that has Signal action!
+    for (auto&& task : sdl) {
+      // handle only task that has premitive-action!
       if (not std::get_if<PremitiveAction>(&task.action)) continue;
 
       //cout << "[DEBUG] Resolve one task" << endl;
@@ -760,14 +965,25 @@ public:
       breadcrumb.push_back(task.action);
       
       // task schedule
+      //cout << "[DEBUG] " << std::get_if<PremitiveAction>(&task.action)->ToString() << endl;
       
       // aggregate premitive task
-      // create dummy task, because same action put together as a whole.
-      Task bse = Task{task.action, BootstrapAction{}};
-      for (auto&& evt : SearchPremitiveEvents(bse)) {
-                                            //^ bse aggregates same tasks
+      // tasks that have same premitive-action put together as a whole.
+      vector<Task> targets = FindTasksActionAs<PremitiveAction>(sdl, task.action);
+      //Task bst = Task{task.action, BootstrapAction{}};
+      vector<Event> acc_evt;
+      for (auto&& tar : targets) {
+        auto&& result = SearchPremitiveEvents(sdl, tar);
+        acc_evt.insert(acc_evt.end(), RANGE(result));
+      }
+      { // delete duplicate events
+        std::sort(RANGE(acc_evt));
+        auto last = std::unique(RANGE(acc_evt));
+        acc_evt.erase(last, acc_evt.end());
+      }
+      for (auto&& evt : acc_evt) {
         re_schedule.push_back(
-            std::move(Task{evt, task.action}));
+            std::move(Task{header_evt+evt, task.action}));
       }
 
       // DEBUG
@@ -790,9 +1006,10 @@ public:
           throw std::logic_error("exception: sort failed!");
         });
     
-    this->schedule = re_schedule;
+    return re_schedule;
   }
-  // END-TODO
+public:
+  // END-Schedule
 
   // resolve the merged channel from a channel.
   // channel_name is channel's name of a node-to-channel connection.
@@ -1123,8 +1340,6 @@ public:
     for (auto&& b : boxs) {
       // name mangling to avoid NSOM item's name conflict.
       b.Mangle();
-      // resolve schedule
-      b.ResolveSchedule();
 
       cout << "[DEBUG] " << b.ToString(100) << endl;
       cout << "[DEBUG] " << b.DumpSchedule() << endl;
@@ -1207,29 +1422,6 @@ public:
       ret.value.config = to_channel.config;
       return ret;
     }
-
-#if 0
-    // FIXME to_channel, from_channel の返却はあっているか?
-    // チャネルの融合
-    // 対等な接続なのでどれを取ってもよい
-    if (to_box_port.relation == 0) {
-      ret.value.type = from_channel.type;
-      //ret.value.config = to_channel.config + from_channel.config; // TODO configuration merge
-      ret.value.config = "\"configration merge dummy\"";
-      return ret;
-    }
-    
-    // 親子関係があるので親から取る
-    if (to_box_port.is_parent == 1) {
-      ret.value.type = to_channel.type;
-      ret.value.config = to_channel.config;
-      return ret;
-    } else {
-      ret.value.type = from_channel.type;
-      ret.value.config = from_channel.config;
-      return ret;
-    }
-#endif
 
     throw std::logic_error("invalid port relation");
   }
@@ -1342,16 +1534,7 @@ public:
     json j;
     for (const auto& box : boxs) {
       int task_i = 0;
-      for (const auto& task : box.schedule) {
-        // skip Signal
-        //if (auto&& v = std::get_if<Signal>(&task.evt.value())) {
-        //  cout << "[builder] " << "skipped task of signal\n";
-        //  cout << "\tbox: " << box.ToString() << endl;
-        //  cout << "\ttask: " << task.ToString() << endl;
-        //  continue;
-        //}
-        // task convert to app
-        // Task { evt, action_type, params }
+      for (const auto& task : box.ResolveScheduleToTask()) {
         string task_name = box.GetName() + "_T" + std::to_string(task_i);
         j[task_name] = GenAppBody(task);
         ++task_i;
@@ -1379,9 +1562,6 @@ public:
     if (auto&& v = std::get_if<Time>(&task.evt.value())) {
       const Time& time = *v;
       j["args"]["start"] = time.value;
-    //} else if (auto&& v = std::get_if<Signal>(&task.evt.value())) {
-    //  const Signal& signal = *v;
-    //  j["args"]["signal"] = signal.value;
     } else {
       std::stringstream ss;
       ss << "Could not generate application due to event type `";
@@ -1611,13 +1791,19 @@ void nic_switch_test() {
     .Receive(Time{10})
     .Action(Signal{"SwitchPort1"})
     ;
+  //rs.Receive(Time{15})
+  //  .Action(rs.GetSchedule())
+  //  ;
+  
+  // TODO Nested-Schedule
   //rs
-  //  .Receive(Range<Time>{5,35,10})
-  //  .Schedule([](auto&rs){rs
+  //  .Receive(Range<Time>{5,6,10})
+  //  .Schedule([](auto&&rs){rs
   //    .Receive(Time{0})
   //    .Action(Signal{"SwitchPort0"})
   //    .Receive(Time{5})
   //    .Action(Signal{"SwitchPort1"})
+  //    ;
   //  })
   //  ;
 
