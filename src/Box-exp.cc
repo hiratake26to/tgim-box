@@ -881,7 +881,24 @@ public:
       }
     }
 
+    // sort by time
+    //std::sort(re_schedule.begin(), re_schedule.end(),
+    //    [](Task a, Task b) {
+    //      if (
+    //          auto&& lhs = std::get_if<Time>(&a.evt.value());
+    //          auto&& rhs = std::get_if<Time>(&b.evt.value())
+    //      ) {
+    //        // note: lhs type is Time*, for Time, using to *lhs
+    //        return *lhs < *rhs;
+    //      }
+    //      throw std::logic_error("exception: sort failed!");
+    //    });
+    
     // TODO debug!!
+    cout << "Resolve Signal" << endl;
+    for (auto&& i : ret) {
+      cout << "[] " << i.ToString() << endl;
+    }
     return ret;
   }
   static Schedule ConcatSigtable(const Schedule& lhs, const Schedule& rhs) {
@@ -900,6 +917,8 @@ public:
       // task's Action with Signal
       if (std::get_if<Signal>(&task.action)) {
         auto&& result = ResolveSignal(sdl.sigtbl, task);
+        // result task's event overwrite to task.evt
+        for (auto&& r : result) { r.evt = task.evt; }
         ret.insert(ret.end(), RANGE(result));
         continue;
       }
@@ -920,94 +939,6 @@ public:
     return ResolveScheduleToTask(this->schedule_);
   }
   // TODO TODO-END
-  void ResolveSchedule() {
-    Schedule ret;
-    //// TODO resolve nested schedule
-    //for (auto&& task : this->schedule_.list) {
-    //  if (auto&& sdl = std::get_if<Schedule>(&task.action)) {
-    //    Schedule sdl_and_sig = *sdl;
-    //    sdl_and_sig.insert(sdl_and_sig.end(), RANGE(sigtbl_));
-    //    auto&& result = ResolveTask(sdl_and_sig, task.evt);
-    //    // DEBUG
-    //    cout << "[DEBUG] result:" << endl;
-    //    for (const auto& task : result) {
-    //      cout << task.ToString() << endl;
-    //    }
-    //    ret.insert(ret.end(), RANGE(result));
-    //  }
-    //}
-
-    //// resolve top-level schedule
-    //Schedule sdl_and_sig = this->schedule_;
-    //sdl_and_sig.insert(sdl_and_sig.end(), RANGE(sigtbl_));
-    //auto&& result = ResolveTask(this->schedule_, Event{Time{0}});
-    //ret.insert(ret.end(), RANGE(result));
-
-    this->schedule_ = std::move(ret);
-  }
-private:
-  vector<Task> ResolveTask(const vector<Task>& sdl, const Event& header_evt) const {
-    vector<Task> re_schedule;
-    // resolve signal in schedule
-
-    // resolve task.evt of Signal.
-    vector<ActionSpecifier> breadcrumb;
-    for (auto&& task : sdl) {
-      // handle only task that has premitive-action!
-      if (not std::get_if<PremitiveAction>(&task.action)) continue;
-
-      //cout << "[DEBUG] Resolve one task" << endl;
-
-      if (std::find(RANGE(breadcrumb), task.action) != std::end(breadcrumb)) {
-        //cout << "[DEBUG] skip: " << task.ToString() << endl;
-        continue;
-      }
-      breadcrumb.push_back(task.action);
-      
-      // task schedule
-      //cout << "[DEBUG] " << std::get_if<PremitiveAction>(&task.action)->ToString() << endl;
-      
-      // aggregate premitive task
-      // tasks that have same premitive-action put together as a whole.
-      vector<Task> targets = FindTasksActionAs<PremitiveAction>(sdl, task.action);
-      //Task bst = Task{task.action, BootstrapAction{}};
-      vector<Event> acc_evt;
-      for (auto&& tar : targets) {
-        auto&& result = SearchPremitiveEvents(sdl, tar);
-        acc_evt.insert(acc_evt.end(), RANGE(result));
-      }
-      { // delete duplicate events
-        std::sort(RANGE(acc_evt));
-        auto last = std::unique(RANGE(acc_evt));
-        acc_evt.erase(last, acc_evt.end());
-      }
-      for (auto&& evt : acc_evt) {
-        re_schedule.push_back(
-            std::move(Task{header_evt+evt, task.action}));
-      }
-
-      // DEBUG
-      //for (const auto& task : re_schedule) {
-      //  cout << task.ToString() << endl;
-      //}
-
-    }
-
-    // sort by time
-    std::sort(re_schedule.begin(), re_schedule.end(),
-        [](Task a, Task b) {
-          if (
-              auto&& lhs = std::get_if<Time>(&a.evt.value());
-              auto&& rhs = std::get_if<Time>(&b.evt.value())
-          ) {
-            // note: lhs type is Time*, for Time, using to *lhs
-            return *lhs < *rhs;
-          }
-          throw std::logic_error("exception: sort failed!");
-        });
-    
-    return re_schedule;
-  }
 public:
   // END-Schedule
 
