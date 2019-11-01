@@ -429,7 +429,14 @@ struct Range {
   T start;
   T stop;
   T interval;
-  Range(T start, T stop, T interval): start(start), stop(stop), interval(interval) {}
+  Range(T start, T stop, T interval): start(start), stop(stop), interval(interval) {
+    if (not (start < stop)) {
+      throw std::runtime_error("range construction error: could not be `start < stop`");
+    }
+    if (interval <= 0) {
+      throw std::runtime_error("range construction error: could not specified interval to less than equal 0.");
+    }
+  }
   Range(T start, T stop): Range(start, stop, 1) {}
 };
 
@@ -544,20 +551,25 @@ public:
       ret.sigtbl.insert(ret.sigtbl.end(), RANGE(rhs.sigtbl));
       return std::move(ret);
     }
-    string ToString() const {
+    Schedule ConcatSigtable(const SignalTable& rhs) const {
+      Schedule ret = *this;
+      ret.sigtbl.insert(ret.sigtbl.end(), RANGE(rhs));
+      return std::move(ret);
+    }
+    string ToString(int l=0) const {
       std::stringstream ss;
-      ss << "Schedule{\n";
-      ss << "list[\n";
+      ss << string(l,' ') << "Schedule{\n";
+      ss << string(l,' ') << "list[\n";
       for (const auto& task : this->list) {
-        ss << "  " << task.ToString() << ",\n";
+        ss << string(l,' ') << "  " << task.ToString(l+2) << ",\n";
       }
-      ss << "],\n";
-      ss << "sigtbl[\n";
+      ss << string(l,' ') << "],\n";
+      ss << string(l,' ') << "sigtbl[\n";
       for (const auto& task : this->sigtbl) {
-        ss << "  " << task.ToString() << ",\n";
+        ss << string(l,' ') << "  " << task.ToString(l+2) << ",\n";
       }
-      ss << "]\n";
-      ss << "}\n";
+      ss << string(l,' ') << "]\n";
+      ss << string(l,' ') << "}";
       return ss.str();
     }
   };
@@ -565,7 +577,7 @@ public:
   Schedule schedule_;
 
   using ActionSpecifier=std::variant<PremitiveAction,Signal,Schedule>;
-  static string ActionToString(const ActionSpecifier& act) {
+  static string ActionToString(const ActionSpecifier& act, int l=0) {
     std::stringstream ss;
     ss << "Action{";
     if (const auto& val = std::get_if<PremitiveAction>(&act)) {
@@ -573,7 +585,8 @@ public:
     } else if (const auto& val = std::get_if<Signal>(&act)) {
       ss << val->ToString();
     } else if (const auto& val = std::get_if<Schedule>(&act)) {
-      ss << val->ToString();
+      ss << endl;
+      ss << val->ToString(l);
     } else {
       throw std::logic_error("could not action to string!");
     }
@@ -626,6 +639,10 @@ public:
   class EventSpecifer {
     vector<Event> v_;
   public:
+    EventSpecifer() {
+      // immediately event
+      v_.push_back(Event{Time{0}});
+    }
     EventSpecifer(Event evt) {
       v_.push_back(evt);
     }
@@ -657,8 +674,6 @@ public:
     vector<Event> evts;
 
     DecolateEventBox Recv(EventSpecifer es) {
-      // experiment...
-      //GenerateEvent<Time>(evt);
       vector<Event> v = es.value();
       this->evts.insert(this->evts.end(), RANGE(v));
       return *this;
@@ -688,12 +703,9 @@ public:
       return this->box;
     }
     Box& Schedule(const std::function<void(Box&)>& cb) {
-      // TODO How to schedule?????
-      Box box = this->box;
-      cb(box);
-      cout << "[DEBUG] Schedule.." << endl;
-      cout << box.DumpSchedule() << endl;
-      return Do(box.GetSchedule());
+      Box sdl_box("tmp", "tmp");
+      cb(sdl_box);
+      return Do(sdl_box.GetSchedule());
     }
     //Box& Do(string sig) {
     //  return Do(Signal{sig});
@@ -710,12 +722,12 @@ public:
     Event evt; // receive event
     ActionSpecifier action; // action
 
-    string ToString() const {
+    string ToString(int l=0) const {
       std::stringstream ss;
       ss << "Task{evt="
         << evt.ToString()
         << ",act="
-        << ActionToString(action)
+        << ActionToString(action, l+2)
         << "}";
       return ss.str();
     };
@@ -860,6 +872,10 @@ public:
     vector<Task> task_crumb; // avoid for duplication search
     return SearchSignalEvents(sigtbl, target, task, task_crumb);
   }
+  //Schedule ResolveSignal2(const Schedule& sdl, const Task& parent) const {
+  //  // sdl.list, signal table
+  //  // sdl.sigtbl, parent schedule signal table
+  //}
   Schedule ResolveSignal(const SignalTable& sigtbl, const Task& parent) const {
     
     // 1. prepere sigtbl task list,
@@ -903,8 +919,29 @@ public:
 
       // handle task that has nested-schedule!
       if (auto&& ptr = std::get_if<Schedule>(&task.action)) {
-        auto&& result = ResolveScheduleToTask(*ptr);
+        cout << "[AAAAAAAAAA]" << endl;
+        cout << ptr->ToString() << endl;
+        cout << ptr->ConcatSigtable(ctx).ToString() << endl;
+        static int i =0;
+        i++;
+        if (i > 3) throw std::exception();
+        auto&& result = ResolveScheduleToTask(ptr->ConcatSigtable(ctx));
+        //cout << "[x]" << endl;
+        //for (auto&& i : result) {
+        //  cout << "[] " << i.ToString() << endl;
+        //}
+        //cout << "[-]" << endl;
+        // FIXME
+        // filter by result.evt == task.action
+        //result.erase(std::remove_if(
+        //      RANGE(result),
+        //      [&parent](auto&& i){ return i.evt != std::get<Signal>(parent.action); }
+        //      ), result.end());
         ret_list.insert(ret_list.end(), RANGE(result));
+        //for (auto&& i : result) {
+        //  cout << "[] " << i.ToString() << endl;
+        //}
+        //cout << "[x]" << endl;
       }
 
     }
@@ -934,15 +971,19 @@ public:
   }
   vector<Task> ResolveScheduleToTask(const Schedule& sdl) const {
     vector<Task> ret;
+    cout << "[DEBUG!!CALL]" << endl;
+    cout << sdl.ToString() << endl;
     for (auto&& task : sdl.list) {
       // Premitive task
       if (std::get_if<PremitiveAction>(&task.action)) {
+        cout << "[DEBUG] Resolve pre-act: " << task.ToString() << endl;
         ret.push_back(task);
         continue;
       }
       // task's Action with Signal
       if (std::get_if<Signal>(&task.action)) {
-        auto&& result = ResolveSignal(sdl.sigtbl, task);
+        cout << "[DEBUG] Resolve signal for " << task.ToString() << endl;
+        auto&& result = ResolveSignal(sdl, sdl.sigtbl, task);
         // result sigtbl's event overwrite to task.evt
         for (auto&& r : result.sigtbl) { r.evt = task.evt; }
         // result list's event add task.evt
@@ -953,7 +994,14 @@ public:
       }
       // task is Schedule
       if (auto&& nested_sdl = std::get_if<Schedule>(&task.action)) {
+        cout << "[DEBUG] Resolve nested schedule for " << task.ToString() << endl;
+        cout << "[nested_sdl]" << endl;
+        cout << nested_sdl->ToString() << endl;
+        cout << "[sdl]" << endl;
+        cout << sdl.ToString() << endl;
         Schedule temp = nested_sdl->ConcatSigtable(sdl);
+        cout << "[temp]" << endl;
+        cout << temp.ToString() << endl;
         auto&& result = ResolveScheduleToTask(temp);
         // result task's event add task.evt
         for (auto&& r : result) { r.evt += task.evt; }
@@ -962,6 +1010,12 @@ public:
         }
         continue;
       }
+    }
+
+    cout << "[DEBUG!!]" << endl;
+    cout << sdl.ToString() << endl;
+    for (auto&& i : ret) {
+      cout << i.ToString() << endl;
     }
 
     return ret;
@@ -1715,14 +1769,18 @@ void nic_switch_test() {
   // preparate application(schedule)
   RouteSwitch
     .Recv(Signal{"SwitchPort0"})
-    .Do("NicCtl", {{"idx", "1"},{"enable", "0"}})
-    .Recv(Signal{"SwitchPort0"})
-    .Do("NicCtl", {{"idx", "0"},{"enable", "1"}})
-
+    .Schedule([](auto&&a){a
+      //.Recv(Time{0}).Do("NicCtl", {{"idx", "1"},{"enable", "0"}})
+      //.Recv(Time{0}).Do("NicCtl", {{"idx", "0"},{"enable", "1"}})
+      .Recv(Time{0}).Do("PRE_0", {})
+      ;
+    })
     .Recv(Signal{"SwitchPort1"})
-    .Do("NicCtl", {{"idx", "0"},{"enable", "0"}})
-    .Recv(Signal{"SwitchPort1"})
-    .Do("NicCtl", {{"idx", "1"},{"enable", "1"}})
+    .Do("PRE_1", {})
+    //.Recv(Signal{"SwitchPort1"})
+    //.Do("NicCtl", {{"idx", "0"},{"enable", "0"}})
+    //.Recv(Signal{"SwitchPort1"})
+    //.Do("NicCtl", {{"idx", "1"},{"enable", "1"}})
     ;
 
   // topology
@@ -1766,8 +1824,8 @@ void nic_switch_test() {
     ;
 
   // DEBUG
-  cout << "[DEBUG Schedule]" << endl;
-  cout << rs.DumpSchedule() << endl;
+  //cout << "[DEBUG Schedule]" << endl;
+  //cout << rs.DumpSchedule() << endl;
 
   // build
   NsomBuilder builder("TestNet");
@@ -1784,8 +1842,8 @@ void test() {
   // runtime_error: user responsibility
   try{
   //receive_and_action_test();
-  signal_test();
-  //nic_switch_test();
+  //signal_test();
+  nic_switch_test();
   }catch(const std::exception& e) {
     std::cerr
       //<< e.what()
