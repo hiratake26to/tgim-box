@@ -656,14 +656,14 @@ public:
     Box& box;
     vector<Event> evts;
 
-    DecolateEventBox Receive(EventSpecifer es) {
+    DecolateEventBox Recv(EventSpecifer es) {
       // experiment...
       //GenerateEvent<Time>(evt);
       vector<Event> v = es.value();
       this->evts.insert(this->evts.end(), RANGE(v));
       return *this;
     }
-    Box& Action(string act_type, json param) {
+    Box& Do(string act_type, json param) {
       // generate application
       // params: [ HandlerName, HandlerParameter ]
       for (const auto& e : this->evts) {
@@ -672,14 +672,14 @@ public:
 
       return this->box;
     }
-    Box& Action(Signal sig) {
+    Box& Do(Signal sig) {
       for (const auto& e : this->evts) {
         box.AddTask(e, sig);
       }
 
       return this->box;
     }
-    Box& Action(Schedule sdl) {
+    Box& Do(Schedule sdl) {
       for (const auto& e : this->evts) {
         cout << "[DEBUG] action: evt " << e.ToString() << endl;
         box.AddTask(e, sdl);
@@ -693,16 +693,16 @@ public:
       cb(box);
       cout << "[DEBUG] Schedule.." << endl;
       cout << box.DumpSchedule() << endl;
-      return Action(box.GetSchedule());
+      return Do(box.GetSchedule());
     }
-    //Box& Action(string sig) {
-    //  return Action(Signal{sig});
+    //Box& Do(string sig) {
+    //  return Do(Signal{sig});
     //}
   };
-  // Box::Receive method is bootstrap of DecolateEventBox
-  DecolateEventBox Receive(EventSpecifer es) {
+  // Box::Recv method is bootstrap of DecolateEventBox
+  DecolateEventBox Recv(EventSpecifer es) {
     // for time, generate event
-    return DecolateEventBox{*this}.Receive(es);
+    return DecolateEventBox{*this}.Recv(es);
   }
 
   // Task is move-only and use only via reference.
@@ -1619,24 +1619,24 @@ void receive_and_action_test() {
     {"time" , 5 },
     {"rate" , "1Mbps" }
   };
-  //b0.Receive(5)
-  //  .Action("ping", ping_param)
-  //  .Receive(10)
-  //  .Action("ping", ping_param)
+  //b0.Recv(5)
+  //  .Do("ping", ping_param)
+  //  .Recv(10)
+  //  .Do("ping", ping_param)
   //  ;
   //b0.Schedule(Time{15}, "ping", {{"shost", "${_Bb0_Nn0}"}});
 
-  b0.Receive(Range<Time>{5, 15, 5}) // expanded to [5,10,15]
-    .Action("Ping", ping_param)
+  b0.Recv(Range<Time>{5, 15, 5}) // expanded to [5,10,15]
+    .Do("Ping", ping_param)
     ;
   
-  b1.Receive(1)
-    .Action("Sink", {{"port",8080},{"time",30}})
+  b1.Recv(1)
+    .Do("Sink", {{"port",8080},{"time",30}})
     ;
 
   // TODO signal (rough draft)
-  //b1.Receive(Signal{"dummy"})
-  //  .Action("Signal", {{"param1",123},{"param2","abc"}})
+  //b1.Recv(Signal{"dummy"})
+  //  .Do("Signal", {{"param1",123},{"param2","abc"}})
   //  ;
 
   NsomBuilder builder("TestNet");
@@ -1656,24 +1656,24 @@ void signal_test() {
   sender.ConnectPort("p0", sinker, "p0");
 
   sender
-    .Receive(Time{1}).Action(Signal{"Sig1"})
-    .Receive(Time{1}).Action(Signal{"Sig2"})
-    .Receive(Time{2}).Action(Signal{"Sig1"})
-    .Receive(Signal{"Sig1"}).Action(Signal{"Sig3"})
-    .Receive(Signal{"Sig2"}).Action("Pre1", {})
-    //.Receive(Signal{"Sig2"}).Action(Signal{"Sig4"})
-    .Receive(Signal{"Sig3"}).Action("Pre1", {})
-    .Receive(Signal{"Sig3"}).Action(Signal{"Sig2"})
+    .Recv(Time{1}).Do(Signal{"Sig1"})
+    .Recv(Time{1}).Do(Signal{"Sig2"})
+    .Recv(Time{2}).Do(Signal{"Sig1"})
+    .Recv(Signal{"Sig1"}).Do(Signal{"Sig3"})
+    .Recv(Signal{"Sig2"}).Do("Pre1", {})
+    //.Recv(Signal{"Sig2"}).Do(Signal{"Sig4"})
+    .Recv(Signal{"Sig3"}).Do("Pre1", {})
+    .Recv(Signal{"Sig3"}).Do(Signal{"Sig2"})
     ;
   //sender
-  //  .Receive(Signal{"Sig1"})
-  //  .Action("Pre1", {})
-  //  .Receive(Signal{"Sig2"})
-  //  .Action("Pre1", {})
+  //  .Recv(Signal{"Sig1"})
+  //  .Do("Pre1", {})
+  //  .Recv(Signal{"Sig2"})
+  //  .Do("Pre1", {})
   //  ;
   //sender
-  //  .Receive(Time{1}).Action(Signal{"Sig1"})
-  //  .Receive(Time{2}).Action(Signal{"Sig2"})
+  //  .Recv(Time{1}).Do(Signal{"Sig1"})
+  //  .Recv(Time{2}).Do(Signal{"Sig2"})
   //  ;
 
   NsomBuilder builder("TestNet");
@@ -1708,21 +1708,21 @@ void nic_switch_test() {
   Sinker.TriConnect("n0", "c0", "p0");
   Sinker.TriConnect("n0", "c1", "p1");
   Sinker
-    .Receive(Signal{"Start"})
-    .Action("Sink", {{"port",8080},{"time",30}})
+    .Recv(Signal{"Start"})
+    .Do("Sink", {{"port",8080},{"time",30}})
     ;
 
   // preparate application(schedule)
   RouteSwitch
-    .Receive(Signal{"SwitchPort0"})
-    .Action("NicCtl", {{"idx", "1"},{"enable", "0"}})
-    .Receive(Signal{"SwitchPort0"})
-    .Action("NicCtl", {{"idx", "0"},{"enable", "1"}})
+    .Recv(Signal{"SwitchPort0"})
+    .Do("NicCtl", {{"idx", "1"},{"enable", "0"}})
+    .Recv(Signal{"SwitchPort0"})
+    .Do("NicCtl", {{"idx", "0"},{"enable", "1"}})
 
-    .Receive(Signal{"SwitchPort1"})
-    .Action("NicCtl", {{"idx", "0"},{"enable", "0"}})
-    .Receive(Signal{"SwitchPort1"})
-    .Action("NicCtl", {{"idx", "1"},{"enable", "1"}})
+    .Recv(Signal{"SwitchPort1"})
+    .Do("NicCtl", {{"idx", "0"},{"enable", "0"}})
+    .Recv(Signal{"SwitchPort1"})
+    .Do("NicCtl", {{"idx", "1"},{"enable", "1"}})
     ;
 
   // topology
@@ -1748,59 +1748,22 @@ void nic_switch_test() {
   s0.ConnectPort("p1", r1, "p1");
 
   // schedule
-  //rs
-  //  .Receive(Time{5})
-  //  .Action(Signal{"SwitchPort0"})
-  //  .Receive(Time{10})
-  //  .Action(Signal{"SwitchPort1"})
-  //  ;
-  //rs.Receive(Time{15})
-  //  .Action(rs.GetSchedule())
-  //  ;
-  
-  // TODO Nested-Schedule
-  //rs.Receive(Range<Time>{0,30,10})
-  //  .Schedule([](auto&&a){a
-  //    .Receive(Time{0})
-  //    .Action("NicCtl", {})
-  //    .Receive(Time{2})
-  //    .Action("NicCtl", {})
-  //    ;
-  //  })
-  //  ;
-  
-  rs.Receive(Time{5})
-    .Action(Signal{"SimStart"})
+  rs.Recv(Time{5})
+    .Do(Signal{"SimStart"})
     ;
-  
-  //rs.Receive(Signal{"SimStart"})
-  //  .Schedule([](auto&&rs){rs
-  //    .Receive(Time{0})
-  //    .Action(Signal{"SwitchPort0"})
-  //    .Receive(Time{5})
-  //    .Action(Signal{"SwitchPort1"})
-  //    ;
-  //  })
-  //  ;
-
-  rs.Receive(Signal{"SimStart"})
+  rs.Recv(Signal{"SimStart"})
     .Schedule([](auto&&rs){rs
-      .Receive(Range<Time>{10,30,10}) // expanded to [10, 20]
+      .Recv(Range<Time>{10,30,10}) // expanded to [10, 20]
       .Schedule([](auto&&rs){rs
-        .Receive(Time{0})
-        .Action(Signal{"SwitchPort0"})
-        .Receive(Time{5})
-        .Action(Signal{"SwitchPort1"})
+        .Recv(Time{0})
+        .Do(Signal{"SwitchPort0"})
+        .Recv(Time{5})
+        .Do(Signal{"SwitchPort1"})
         ;
       })
       ;
     })
     ;
-
-  // TODO Simulation Start Signal
-  //s0.Receive(1)
-  //  .Action(Signal{"Start"})
-  //  ;
 
   // DEBUG
   cout << "[DEBUG Schedule]" << endl;
@@ -1821,8 +1784,8 @@ void test() {
   // runtime_error: user responsibility
   try{
   //receive_and_action_test();
-  //signal_test();
-  nic_switch_test();
+  signal_test();
+  //nic_switch_test();
   }catch(const std::exception& e) {
     std::cerr
       //<< e.what()
