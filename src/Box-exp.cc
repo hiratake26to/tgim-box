@@ -407,23 +407,6 @@ struct Signal {
   bool operator>=(const Signal& rhs) const { return !(*this < rhs); }
 };
 
-struct BootstrapAction {
-  bool operator==(const BootstrapAction& rhs) const {
-    return true;
-  }
-  bool operator!=(const BootstrapAction& rhs) const { return !(*this == rhs); }
-  const char* ToString() const {
-    return "BootstrapAction";
-  }
-  bool operator<(const BootstrapAction& rhs) const {
-    //return value < rhs.value;
-    return false;
-  }
-  bool operator> (const BootstrapAction& rhs) const { return rhs < *this; }
-  bool operator<=(const BootstrapAction& rhs) const { return !(*this > rhs); }
-  bool operator>=(const BootstrapAction& rhs) const { return !(*this < rhs); }
-};
-
 template<typename T>
 struct Range {
   T start;
@@ -839,7 +822,6 @@ public:
     return ss.str();
   }
 
-  // TODO TODO
   vector<Task> ResolveScheduleToTask(const Schedule& sdl,int callid=0) const {
     vector<Task> ret;
     cout << "[DEBUG!!CALL("<<callid<<")]" << endl;
@@ -908,7 +890,6 @@ public:
   vector<Task> ResolveScheduleToTask() const {
     return ResolveScheduleToTask(this->schedule_);
   }
-  // TODO TODO-END
 public:
   // END-Schedule
 
@@ -1655,17 +1636,16 @@ void nic_switch_test() {
   RouteSwitch
     .Recv(Signal{"SwitchPort0"})
     .Schedule([](auto&&a){a
-      //.Recv(Time{0}).Do("NicCtl", {{"idx", "1"},{"enable", "0"}})
-      //.Recv(Time{0}).Do("NicCtl", {{"idx", "0"},{"enable", "1"}})
-      .Recv(Time{0}).Do("PRE_0", {})
+      .Recv(Time{0}).Do("NicCtl", {{"idx", "1"},{"enable", "0"}})
+      .Recv(Time{0}).Do("NicCtl", {{"idx", "0"},{"enable", "1"}})
+      //.Recv(Time{0}).Do("PRE_0", {})
       ;
     })
+    //.Recv(Signal{"SwitchPort1"}).Do("PRE_1", {})
     .Recv(Signal{"SwitchPort1"})
-    .Do("PRE_1", {})
-    //.Recv(Signal{"SwitchPort1"})
-    //.Do("NicCtl", {{"idx", "0"},{"enable", "0"}})
-    //.Recv(Signal{"SwitchPort1"})
-    //.Do("NicCtl", {{"idx", "1"},{"enable", "1"}})
+    .Do("NicCtl", {{"idx", "0"},{"enable", "0"}})
+    .Recv(Signal{"SwitchPort1"})
+    .Do("NicCtl", {{"idx", "1"},{"enable", "1"}})
     ;
 
   // topology
