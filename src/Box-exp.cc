@@ -546,14 +546,21 @@ public:
       return (this->list == rhs.list and this->sigtbl == rhs.sigtbl);
     }
     bool operator!=(const Schedule& rhs) const { return !(*this==rhs); }
+    // no overwrite sigtbl when this has already sigtbl's signal.
     Schedule ConcatSigtable(const Schedule& rhs) const {
       Schedule ret = *this;
-      ret.sigtbl.insert(ret.sigtbl.end(), RANGE(rhs.sigtbl));
-      return std::move(ret);
-    }
-    Schedule ConcatSigtable(const SignalTable& rhs) const {
-      Schedule ret = *this;
-      ret.sigtbl.insert(ret.sigtbl.end(), RANGE(rhs));
+      for (const auto& sigtask : rhs.sigtbl) {
+        // continue if it has already
+        if (this-> sigtbl.end() 
+            != // find condition
+            std::find_if(RANGE(this->sigtbl),
+              [&sigtask](auto task){ return task.evt == sigtask.evt; }
+            ))
+        {
+          continue;
+        }
+        ret.sigtbl.push_back(sigtask);
+      }
       return std::move(ret);
     }
     string ToString(int l=0) const {
@@ -833,176 +840,54 @@ public:
   }
 
   // TODO TODO
-  // find task that arg's task firing
-  static vector<Event> SearchSignalEvents(
-      const SignalTable& sigtbl, const Signal& target, const Task& task, vector<Task>& breadcrumb) 
-  {
-    breadcrumb.push_back(task);
-    //cout << "[DEBUG] search from: " << task.ToString() << endl;
-    // if task.action is type of Time, resolve already!
-    if (auto&& sig = std::get_if<Signal>(&task.evt.value())) {
-      if (*sig == target) {
-        //cout << "[DEBUG] find!: " << task.ToString() << endl;
-        return {task.evt};
-      }
-    }
-
-    // resolve Event(parent would have Action) from parent Task recursive
-    vector<Event> ret;
-    for (const auto& parent_task : FindTasksActionAs<Signal>(sigtbl, task.evt.value())) {
-      //cout << "[DEBUG] for parent task: " << parent_task.ToString() << endl;
-      // skip if parent task contains in breadcrumb
-      if (std::find(RANGE(breadcrumb), parent_task) != std::end(breadcrumb)) {
-        //cout << "[DEBUG] skip: " << parent_task.ToString() << endl;
-        continue;
-      }
-      auto&& evts = SearchSignalEvents(sigtbl, target, parent_task, breadcrumb);
-      ret.insert(ret.end(), RANGE(evts));
-    }
-
-    // delete duplicate events
-    UNIQUE(ret);
-
-    //cout << "[DEBUG] current breadcrumb: " << breadcrumb.size() << endl;
-    //cout << "[DEBUG] signal of task resolved: " << ret.size() << endl;
-
-    return ret;
-  }
-  vector<Event> SearchSignalEvents(const SignalTable& sigtbl, const Signal& target, const Task& task) const {
-    vector<Task> task_crumb; // avoid for duplication search
-    return SearchSignalEvents(sigtbl, target, task, task_crumb);
-  }
-  //Schedule ResolveSignal2(const Schedule& sdl, const Task& parent) const {
-  //  // sdl.list, signal table
-  //  // sdl.sigtbl, parent schedule signal table
-  //}
-  Schedule ResolveSignal(const SignalTable& sigtbl, const Task& parent) const {
-    
-    // 1. prepere sigtbl task list,
-    // Task { Signal, PreAct }
-    // task has premitive action
-    // 2. parent task's action to compare with sigtbl
-    // return it if a task found in sigtbl, that equality parent task's action
-    // return none if not found
-    
-    vector<Task> ret_signal;
-    vector<Task> ret_list;
-  
-    // resolve task.evt of Signal.
-    vector<ActionSpecifier> breadcrumb;
-    for (const auto& task : sigtbl) {
-      // handle task that has premitive-action!
-      if (std::get_if<PremitiveAction>(&task.action)) {
-        //cout << "[DEBUG] Resolve one task" << endl;
-        if (std::find(RANGE(breadcrumb), task.action) != std::end(breadcrumb)) {
-          //cout << "[DEBUG] skip: " << task.ToString() << endl;
-          continue;
-        }
-        breadcrumb.push_back(task.action);
-
-        // aggregate premitive task
-        // tasks that have same premitive-action put together as a whole.
-        vector<Task> aggre_preact = FindTasksActionAs<PremitiveAction>(sigtbl, task.action);
-        vector<Event> acc_evt;
-        for (auto&& preact: aggre_preact) {
-          auto&& result = SearchSignalEvents(sigtbl, std::get<Signal>(parent.action), preact);
-          acc_evt.insert(acc_evt.end(), RANGE(result));
-        }
-        // delete duplicate events
-        UNIQUE(acc_evt);
-
-        for (auto&& evt : acc_evt) {
-          ret_signal.push_back(
-              std::move(Task{evt, task.action}));
-        }
-      }
-
-      // handle task that has nested-schedule!
-      if (auto&& ptr = std::get_if<Schedule>(&task.action)) {
-        cout << "[AAAAAAAAAA]" << endl;
-        cout << ptr->ToString() << endl;
-        cout << ptr->ConcatSigtable(ctx).ToString() << endl;
-        static int i =0;
-        i++;
-        if (i > 3) throw std::exception();
-        auto&& result = ResolveScheduleToTask(ptr->ConcatSigtable(ctx));
-        //cout << "[x]" << endl;
-        //for (auto&& i : result) {
-        //  cout << "[] " << i.ToString() << endl;
-        //}
-        //cout << "[-]" << endl;
-        // FIXME
-        // filter by result.evt == task.action
-        //result.erase(std::remove_if(
-        //      RANGE(result),
-        //      [&parent](auto&& i){ return i.evt != std::get<Signal>(parent.action); }
-        //      ), result.end());
-        ret_list.insert(ret_list.end(), RANGE(result));
-        //for (auto&& i : result) {
-        //  cout << "[] " << i.ToString() << endl;
-        //}
-        //cout << "[x]" << endl;
-      }
-
-    }
-
-    // sort by time
-    //std::sort(re_schedule.begin(), re_schedule.end(),
-    //    [](Task a, Task b) {
-    //      if (
-    //          auto&& lhs = std::get_if<Time>(&a.evt.value());
-    //          auto&& rhs = std::get_if<Time>(&b.evt.value())
-    //      ) {
-    //        // note: lhs type is Time*, for Time, using to *lhs
-    //        return *lhs < *rhs;
-    //      }
-    //      throw std::logic_error("exception: sort failed!");
-    //    });
-    
-    // TODO debug!!
-    cout << "[DEBUG] Resolve Signal" << endl;
-    for (auto&& i : ret_signal) {
-      cout << "[sig] " << i.ToString() << endl;
-    }
-    for (auto&& i : ret_list) {
-      cout << "[lst] " << i.ToString() << endl;
-    }
-    return {ret_list, ret_signal};
-  }
-  vector<Task> ResolveScheduleToTask(const Schedule& sdl) const {
+  vector<Task> ResolveScheduleToTask(const Schedule& sdl,int callid=0) const {
     vector<Task> ret;
-    cout << "[DEBUG!!CALL]" << endl;
+    cout << "[DEBUG!!CALL("<<callid<<")]" << endl;
     cout << sdl.ToString() << endl;
     for (auto&& task : sdl.list) {
       // Premitive task
       if (std::get_if<PremitiveAction>(&task.action)) {
-        cout << "[DEBUG] Resolve pre-act: " << task.ToString() << endl;
+        //cout << "[DEBUG] Resolve pre-act: " << task.ToString() << endl;
         ret.push_back(task);
         continue;
       }
       // task's Action with Signal
-      if (std::get_if<Signal>(&task.action)) {
-        cout << "[DEBUG] Resolve signal for " << task.ToString() << endl;
-        auto&& result = ResolveSignal(sdl, sdl.sigtbl, task);
-        // result sigtbl's event overwrite to task.evt
-        for (auto&& r : result.sigtbl) { r.evt = task.evt; }
-        // result list's event add task.evt
-        for (auto&& r : result.list) { r.evt += task.evt; }
-        ret.insert(ret.end(), RANGE(result.sigtbl));
-        ret.insert(ret.end(), RANGE(result.list));
+      if (auto&& ptr_act = std::get_if<Signal>(&task.action)) {
+        //cout << "[DEBUG] Resolve signal for " << task.ToString() << endl;
+        Schedule temp{{}, sdl.sigtbl};
+        for (auto&& sigtask : sdl.sigtbl) {
+          if (Event{*ptr_act} == sigtask.evt) {
+            // Task is not still resolve that action
+            // e.g.
+            // list: [
+            //   Task{task.evt, Signal{A}} ... target
+            // ]
+            // sigtbl: [
+            //   Task{Signal{A}, PreAct{x}} ... resolve!
+            //   Task{Signal{A}, Signal{B}} ... yet resolve.
+            //   Task{Signal{A}, Schedule{...}} ... yet resolve.
+            // ]
+            temp.list.push_back(Task{task.evt, sigtask.action});
+          }
+        }
+        const auto& result = ResolveScheduleToTask(temp, callid+1);
+        ret.insert(ret.end(), RANGE(result));
         continue;
       }
       // task is Schedule
-      if (auto&& nested_sdl = std::get_if<Schedule>(&task.action)) {
-        cout << "[DEBUG] Resolve nested schedule for " << task.ToString() << endl;
-        cout << "[nested_sdl]" << endl;
-        cout << nested_sdl->ToString() << endl;
-        cout << "[sdl]" << endl;
-        cout << sdl.ToString() << endl;
-        Schedule temp = nested_sdl->ConcatSigtable(sdl);
-        cout << "[temp]" << endl;
-        cout << temp.ToString() << endl;
-        auto&& result = ResolveScheduleToTask(temp);
+      if (auto&& ptr = std::get_if<Schedule>(&task.action)) {
+        const auto& nested_sdl = *ptr;
+        const auto& temp = nested_sdl.ConcatSigtable(sdl);
+
+        //cout << "[DEBUG] Resolve nested schedule for " << task.ToString() << endl;
+        //cout << "[nested_sdl]" << endl;
+        //cout << nested_sdl.ToString() << endl;
+        //cout << "[sdl]" << endl;
+        //cout << sdl.ToString() << endl;
+        //cout << "[temp]" << endl;
+        //cout << temp.ToString() << endl;
+
+        auto&& result = ResolveScheduleToTask(temp, callid+1);
         // result task's event add task.evt
         for (auto&& r : result) { r.evt += task.evt; }
         if (result.size() > 0) {
@@ -1012,10 +897,10 @@ public:
       }
     }
 
-    cout << "[DEBUG!!]" << endl;
-    cout << sdl.ToString() << endl;
+    cout << "[DEBUG!!EXIT("<<callid<<")]" << endl;
+    int idx = 0;
     for (auto&& i : ret) {
-      cout << i.ToString() << endl;
+      cout << "["<<(idx++)<<"] " << i.ToString() << endl;
     }
 
     return ret;
@@ -1809,8 +1694,13 @@ void nic_switch_test() {
   rs.Recv(Time{5})
     .Do(Signal{"SimStart"})
     ;
-  rs.Recv(Signal{"SimStart"})
+  rs
+    .Recv(Signal{"SwitchPort0"})
+    .Do("ADD_PRE_0", {})
+    .Recv(Signal{"SimStart"})
     .Schedule([](auto&&rs){rs
+      .Recv(Signal{"SwitchPort1"})
+      .Do("OVERRIDE_PRE_1", {})
       .Recv(Range<Time>{10,30,10}) // expanded to [10, 20]
       .Schedule([](auto&&rs){rs
         .Recv(Time{0})
