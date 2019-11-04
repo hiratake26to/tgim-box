@@ -482,11 +482,11 @@ public:
     return ret;
   }
 
-  // PremitiveAction (ActionType, AppType)
-  struct PremitiveAction {
+  // PrimitiveAction (ActionType, AppType)
+  struct PrimitiveAction {
     string type; // ActionType (NSOM-AppType)
     json param;
-    PremitiveAction(string type, json param)
+    PrimitiveAction(string type, json param)
     : type(type), param(param)
     {
       if ( not(param.is_null() or param.is_object()) ){
@@ -503,20 +503,20 @@ public:
         << "}";
       return ss.str();
     }
-    bool operator==(const PremitiveAction& rhs) const {
+    bool operator==(const PrimitiveAction& rhs) const {
       return (this->type == rhs.type and this->param == rhs.param);
     }
-    bool operator!=(const PremitiveAction& rhs) const { return !(*this==rhs); }
-    bool operator<(const PremitiveAction& rhs) const {
+    bool operator!=(const PrimitiveAction& rhs) const { return !(*this==rhs); }
+    bool operator<(const PrimitiveAction& rhs) const {
       if (this->type < rhs.type) return true;
       if (this->param < rhs.param) return true;
       if (this->type > rhs.type) return false;
       if (this->param > rhs.param) return false;
       return false;
     }
-    bool operator> (const PremitiveAction& rhs) const { return rhs < *this; }
-    bool operator<=(const PremitiveAction& rhs) const { return !(*this > rhs); }
-    bool operator>=(const PremitiveAction& rhs) const { return !(*this < rhs); }
+    bool operator> (const PrimitiveAction& rhs) const { return rhs < *this; }
+    bool operator<=(const PrimitiveAction& rhs) const { return !(*this > rhs); }
+    bool operator>=(const PrimitiveAction& rhs) const { return !(*this < rhs); }
   };
 
   struct Task; //prototype
@@ -566,11 +566,11 @@ public:
 
   Schedule schedule_;
 
-  using ActionSpecifier=std::variant<PremitiveAction,Signal,Schedule>;
+  using ActionSpecifier=std::variant<PrimitiveAction,Signal,Schedule>;
   static string ActionToString(const ActionSpecifier& act, int l=0) {
     std::stringstream ss;
     ss << "Action{";
-    if (const auto& val = std::get_if<PremitiveAction>(&act)) {
+    if (const auto& val = std::get_if<PrimitiveAction>(&act)) {
       ss << val->ToString();
     } else if (const auto& val = std::get_if<Signal>(&act)) {
       ss << val->ToString();
@@ -672,7 +672,7 @@ public:
       // generate application
       // params: [ HandlerName, HandlerParameter ]
       for (const auto& e : this->evts) {
-        box.AddTask(e, PremitiveAction{act_type, param});
+        box.AddTask(e, PrimitiveAction{act_type, param});
       }
 
       return this->box;
@@ -763,7 +763,7 @@ public:
     return ret;
   }
 
-  static vector<Event> SearchPremitiveEvents(const vector<Task>& sdl, const Task& task, vector<Task>& breadcrumb) {
+  static vector<Event> SearchPrimitiveEvents(const vector<Task>& sdl, const Task& task, vector<Task>& breadcrumb) {
     breadcrumb.push_back(task);
     //cout << "[DEBUG] search from: " << task.ToString() << endl;
     // if task.action is type of Time, resolve already!
@@ -781,7 +781,7 @@ public:
         //cout << "[DEBUG] skip: " << parent_task.ToString() << endl;
         continue;
       }
-      auto&& evts = SearchPremitiveEvents(sdl, parent_task, breadcrumb);
+      auto&& evts = SearchPrimitiveEvents(sdl, parent_task, breadcrumb);
       ret.insert(ret.end(), RANGE(evts));
     }
 
@@ -797,9 +797,9 @@ public:
 
     return ret;
   }
-  vector<Event> SearchPremitiveEvents(const vector<Task>& sdl, const Task& task) const {
+  vector<Event> SearchPrimitiveEvents(const vector<Task>& sdl, const Task& task) const {
     vector<Task> task_crumb; // avoid for duplication search
-    return SearchPremitiveEvents(sdl, task, task_crumb);
+    return SearchPrimitiveEvents(sdl, task, task_crumb);
   }
 
 private:
@@ -824,11 +824,11 @@ public:
 
   vector<Task> ResolveScheduleToTask(const Schedule& sdl,int callid=0) const {
     vector<Task> ret;
-    cout << "[DEBUG!!CALL("<<callid<<")]" << endl;
-    cout << sdl.ToString() << endl;
+    //cout << "[DEBUG!!CALL("<<callid<<")]" << endl;
+    //cout << sdl.ToString() << endl;
     for (auto&& task : sdl.list) {
-      // Premitive task
-      if (std::get_if<PremitiveAction>(&task.action)) {
+      // Primitive task
+      if (std::get_if<PrimitiveAction>(&task.action)) {
         //cout << "[DEBUG] Resolve pre-act: " << task.ToString() << endl;
         ret.push_back(task);
         continue;
@@ -839,7 +839,7 @@ public:
         Schedule temp{{}, sdl.sigtbl};
         for (auto&& sigtask : sdl.sigtbl) {
           if (Event{*ptr_act} == sigtask.evt) {
-            // Task is not still resolve that action
+            // Task is not still resolve action here
             // e.g.
             // list: [
             //   Task{task.evt, Signal{A}} ... target
@@ -879,11 +879,11 @@ public:
       }
     }
 
-    cout << "[DEBUG!!EXIT("<<callid<<")]" << endl;
-    int idx = 0;
-    for (auto&& i : ret) {
-      cout << "["<<(idx++)<<"] " << i.ToString() << endl;
-    }
+    //cout << "[DEBUG!!EXIT("<<callid<<")]" << endl;
+    //int idx = 0;
+    //for (auto&& i : ret) {
+    //  cout << "["<<(idx++)<<"] " << i.ToString() << endl;
+    //}
 
     return ret;
   }
@@ -1429,13 +1429,13 @@ public:
   json GenAppBody(const Box::Task& task) {
     json j;
     try {
-      const auto& action = std::get<Box::PremitiveAction>(task.action);
+      const auto& action = std::get<Box::PrimitiveAction>(task.action);
       j["type"] = action.type;
       j["args"] = action.param;
     }
     catch (const std::bad_variant_access&) {
       std::stringstream ss;
-      ss << "exception: task.action is not type of PremitiveAction!\n";
+      ss << "exception: task.action is not type of PrimitiveAction!\n";
       std::visit([&ss](auto&& arg) {
           using T = std::decay_t<decltype(arg)>;
           ss << "\ttask.action type: " << boost::core::demangle(typeid(T).name());
@@ -1671,13 +1671,24 @@ void nic_switch_test() {
   s0.ConnectPort("p1", r1, "p1");
 
   // schedule
-  rs.Recv(Time{5})
+  // global signal: SimStart
+  Box global("_global", "GlobalSignal"); // exclusive box for signal
+  global
+    .Recv(Time{5})
     .Do(Signal{"SimStart"})
     ;
+  // sinker
+  s0
+    .Recv(Time{5})
+    .Do(Signal{"SimStart"})
+    .Recv(Signal{"SimStart"})
+    .Do(Signal{"Start"})
+    ;
+  // route switch
   rs
     .Recv(Signal{"SwitchPort0"})
     .Do("ADD_PRE_0", {})
-    .Recv(Signal{"SimStart"})
+    .Recv(Signal{"Start"})
     .Schedule([](auto&&rs){rs
       .Recv(Signal{"SwitchPort1"})
       .Do("OVERRIDE_PRE_1", {})
@@ -1689,8 +1700,16 @@ void nic_switch_test() {
         .Do(Signal{"SwitchPort1"})
         ;
       })
+      .Recv(Signal{"Timeout"})
+      .Do(Signal{"Stop"})
       ;
     })
+    ;
+  rs
+    .Recv(Time{5})
+    .Do(Signal{"SimStart"})
+    .Recv(Signal{"SimStart"})
+    .Do(Signal{"Start"})
     ;
 
   // DEBUG
@@ -1699,6 +1718,7 @@ void nic_switch_test() {
 
   // build
   NsomBuilder builder("TestNet");
+  builder.AddBox(global);
   builder.AddBox(rs);
   builder.AddBox(r0);
   builder.AddBox(r1);
