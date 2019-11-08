@@ -2,6 +2,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <list>
 #include <vector>
 #include <functional>
 #include <algorithm>
@@ -17,7 +18,8 @@ using std::cout;
 using std::endl;
 using std::optional;
 using std::string;
-using std::vector;
+using std::vector; // should not use reference to a element of vector.
+using std::list; // allow to use reference of a element.
 using std::pair;
 using std::map;
 using std::type_info;
@@ -189,12 +191,12 @@ struct Node {
 
   // list of connections, from node to channel
   vector<Netif> GenConnList() const {
-    vector<Netif> list;
+    vector<Netif> conn_list;
     for (const auto& conn : this->connect_to) {
-      list.push_back({conn, this->roles});
+      conn_list.push_back({conn, this->roles});
     }
 
-    return list;
+    return conn_list;
   }
 
   string ToString(int level=0) const {
@@ -360,7 +362,7 @@ struct Port {
 // associated event
 // premitive event
 // - Time
-// - Signal
+// - Sig
 struct Time {
   int value;
   Time(int t): value(t) {}
@@ -388,23 +390,23 @@ struct Time {
   }
 };
 
-struct Signal {
+struct Sig {
   string value;
-  bool operator==(const Signal& rhs) const {
+  bool operator==(const Sig& rhs) const {
     return value == rhs.value;
   }
-  bool operator!=(const Signal& rhs) const { return !(*this == rhs); }
+  bool operator!=(const Sig& rhs) const { return !(*this == rhs); }
   string ToString() const {
     std::stringstream ss;
-    ss << "Signal{\"" << value << "\"}";
+    ss << "Sig{\"" << value << "\"}";
     return ss.str();
   }
-  bool operator<(const Signal& rhs) const {
+  bool operator<(const Sig& rhs) const {
     return value < rhs.value;
   }
-  bool operator> (const Signal& rhs) const { return rhs < *this; }
-  bool operator<=(const Signal& rhs) const { return !(*this > rhs); }
-  bool operator>=(const Signal& rhs) const { return !(*this < rhs); }
+  bool operator> (const Sig& rhs) const { return rhs < *this; }
+  bool operator<=(const Sig& rhs) const { return !(*this > rhs); }
+  bool operator>=(const Sig& rhs) const { return !(*this < rhs); }
 };
 
 template<typename T>
@@ -520,13 +522,15 @@ public:
   };
 
   struct Task; //prototype
-  //using Schedule=vector<Task>;
-  using SignalTable=vector<Task>;
   struct Schedule {
-    vector<Task> list;
-    vector<Task> sigtbl;
+    //vector<Task> tbl;
+    //vector<Task> sigtbl;
+    // cannot use vector dut to possible invalid reference
+    //https://ja.cppreference.com/w/cpp/container/list
+    list<Task> tbl;
+    list<Task> sigtbl;
     bool operator==(const Schedule& rhs) const {
-      return (this->list == rhs.list and this->sigtbl == rhs.sigtbl);
+      return (this->tbl == rhs.tbl and this->sigtbl == rhs.sigtbl);
     }
     bool operator!=(const Schedule& rhs) const { return !(*this==rhs); }
     // no overwrite sigtbl when this has already sigtbl's signal.
@@ -549,8 +553,8 @@ public:
     string ToString(int l=0) const {
       std::stringstream ss;
       ss << string(l,' ') << "Schedule{\n";
-      ss << string(l,' ') << "list[\n";
-      for (const auto& task : this->list) {
+      ss << string(l,' ') << "tbl[\n";
+      for (const auto& task : this->tbl) {
         ss << string(l,' ') << "  " << task.ToString(l+2) << ",\n";
       }
       ss << string(l,' ') << "],\n";
@@ -566,13 +570,13 @@ public:
 
   Schedule schedule_;
 
-  using ActionSpecifier=std::variant<PrimitiveAction,Signal,Schedule>;
+  using ActionSpecifier=std::variant<PrimitiveAction,Sig,Schedule>;
   static string ActionToString(const ActionSpecifier& act, int l=0) {
     std::stringstream ss;
     ss << "Action{";
     if (const auto& val = std::get_if<PrimitiveAction>(&act)) {
       ss << val->ToString();
-    } else if (const auto& val = std::get_if<Signal>(&act)) {
+    } else if (const auto& val = std::get_if<Sig>(&act)) {
       ss << val->ToString();
     } else if (const auto& val = std::get_if<Schedule>(&act)) {
       ss << endl;
@@ -584,15 +588,15 @@ public:
     return ss.str();
   }
   // BEGIN-Schedule, receive and action
-  // (premitive) Event [ Time(int) | Signal(int) ]
+  // (premitive) Event [ Time(int) | Sig(int) ]
   class Event {
   public:
-    using Type = std::variant<Time,Signal>;
+    using Type = std::variant<Time,Sig>;
   private:
     Type value_;
   public:
     Event(Time value): value_(value) {}
-    Event(Signal value): value_(value) {}
+    Event(Sig value): value_(value) {}
     const Type& value() const noexcept { return value_; }
     Event operator+(const Event& rhs) const {
       if (auto&& lhs_val = std::get_if<Time>(&this->value_))
@@ -613,7 +617,7 @@ public:
       if (auto&& time = std::get_if<Time>(&this->value_)) {
         return time->ToString();
       }
-      if (auto&& sig = std::get_if<Signal>(&this->value_)) {
+      if (auto&& sig = std::get_if<Sig>(&this->value_)) {
         return sig->ToString();
       }
       throw std::logic_error("exception: no support ToString convertion!");
@@ -627,7 +631,7 @@ public:
   };
   // Event specifer is ether Time, Range<Time>
   class EventSpecifer {
-    vector<Event> v_;
+    vector<Event> v_; // OR
   public:
     EventSpecifer() {
       // immediately event
@@ -642,7 +646,7 @@ public:
     EventSpecifer(int time) {
       v_.push_back(Event{Time{time}});
     }
-    EventSpecifer(Signal id) {
+    EventSpecifer(Sig id) {
       v_.push_back(Event{id});
     }
     template<typename T>
@@ -659,53 +663,166 @@ public:
       return v_;
     }
   };
-  struct DecolateEventBox {
-    Box& box;
-    vector<Event> evts;
 
-    DecolateEventBox Recv(EventSpecifer es) {
+  //
+  // TODO
+  //
+  struct ScheduleControllBlock;
+  struct ScheduleRefBox {
+    Schedule& value;
+
+    static ScheduleControllBlock
+    CreateSCB(ScheduleRefBox srb, optional<Event> evt_last)
+    {
+      return {srb, evt_last, {}};
+    }
+
+    ScheduleControllBlock
+    SCB(optional<Event> evt_last)
+    {
+      return CreateSCB(*this, evt_last);
+    }
+
+    optional<ScheduleControllBlock>
+    AddTask(Event evt, ActionSpecifier action)
+    {
+      Task* p_last = nullptr;
+      if (std::get_if<Sig>(&evt.value())) {
+        this->value.sigtbl.push_back(Task{evt, action});
+        p_last = &this->value.sigtbl.back();
+      } else {
+        this->value.tbl.push_back(Task{evt, action});
+        p_last = &this->value.tbl.back();
+      }
+      if (p_last == nullptr) throw std::logic_error("p_last is nullptr!");
+
+      // Action type PriAct or Sig or Schedule
+      if (Schedule *p_sdl = std::get_if<Schedule>(&p_last->action)) {
+        return CreateSCB(ScheduleRefBox{*p_sdl}, p_last->evt); // return SCB
+      }
+
+      return {};
+    }
+
+    Schedule GetSchedule() const {
+      return value;
+    }
+  };
+  struct ScheduleControllBlock {
+    ScheduleRefBox srb; // reference to the instance of schedule table
+    optional<Event> evt_last; // last pushed event
+    vector<Event> evts; // accumulate OR events
+
+    ScheduleControllBlock At(EventSpecifer es) {
       vector<Event> v = es.value();
+      evt_last = v[v.size()-1];
       this->evts.insert(this->evts.end(), RANGE(v));
       return *this;
     }
-    Box& Do(string act_type, json param) {
+    // should be call after Do
+    ScheduleControllBlock Aft(EventSpecifer es) {
+      if (not evt_last) {
+        throw std::runtime_error("Aft failed, dut to no exist befor event");
+      }
+      // nest
+      Schedule empty;
+      optional<ScheduleControllBlock>
+        nest = srb.AddTask(evt_last.value(), empty);
+      // return result at last
+      ScheduleControllBlock scb = nest.value();
+      return scb.At(es);
+    }
+    ScheduleControllBlock Do(string act_type, json param) {
+      for (const auto& e : this->evts) {
+        srb.AddTask(e, PrimitiveAction{act_type, param});
+      }
+      return {this->srb, this->evt_last}; //reset
+    }
+    ScheduleControllBlock Do(Sig sig) {
+      for (const auto& e : this->evts) {
+        srb.AddTask(e, sig);
+      }
+      return {this->srb, this->evt_last}; //reset
+    }
+    ScheduleControllBlock Do(Schedule sdl) {
+      for (const auto& e : this->evts) {
+        srb.AddTask(e, sdl);
+      }
+      return {this->srb, this->evt_last}; //reset
+    }
+    ScheduleControllBlock Sdl(
+        const std::function<void(ScheduleControllBlock&)>& cb)
+    {
+      cb(*this);
+      return Do(this->srb.GetSchedule());
+    }
+  };
+
+  struct DecolateEventBox {
+    Box& box;
+    optional<Event> evt_last;
+    vector<Event> evts;
+
+    DecolateEventBox At(EventSpecifer es) {
+      vector<Event> v = es.value();
+      evt_last = v[v.size()-1];
+      this->evts.insert(this->evts.end(), RANGE(v));
+      return *this;
+    }
+    //AfterEventBox Aft(EventSpecifer es) {
+    //  Event& last = evt_last.value();
+    //  cout << "[DEBUG] last: " << last.ToString() << endl;
+    //  Box sdl_box("tmp","tmp");
+    //  return {*this, sdl_box, last, es};
+    //}
+    DecolateEventBox Do(string act_type, json param) {
       // generate application
       // params: [ HandlerName, HandlerParameter ]
       for (const auto& e : this->evts) {
         box.AddTask(e, PrimitiveAction{act_type, param});
       }
-
-      return this->box;
+      return {this->box, this->evt_last}; //reset
+      //return this->box;
     }
-    Box& Do(Signal sig) {
+    DecolateEventBox Do(Sig sig) {
       for (const auto& e : this->evts) {
         box.AddTask(e, sig);
       }
-
-      return this->box;
+      return {this->box, this->evt_last}; //reset
+      //return this->box;
     }
-    Box& Do(Schedule sdl) {
+    DecolateEventBox Do(Schedule sdl) {
       for (const auto& e : this->evts) {
-        cout << "[DEBUG] action: evt " << e.ToString() << endl;
+        //cout << "[DEBUG] action: evt " << e.ToString() << endl;
         box.AddTask(e, sdl);
       }
-
-      return this->box;
+      return {this->box, this->evt_last}; //reset
+      //return this->box;
     }
-    Box& Schedule(const std::function<void(Box&)>& cb) {
+    DecolateEventBox Schedule(const std::function<void(Box&)>& cb) {
       Box sdl_box("tmp", "tmp");
       cb(sdl_box);
       return Do(sdl_box.GetSchedule());
     }
     //Box& Do(string sig) {
-    //  return Do(Signal{sig});
+    //  return Do(Sig{sig});
     //}
   };
-  // Box::Recv method is bootstrap of DecolateEventBox
-  DecolateEventBox Recv(EventSpecifer es) {
-    // for time, generate event
-    return DecolateEventBox{*this}.Recv(es);
+  // Box::At method is bootstrap of DecolateEventBox
+  //DecolateEventBox At(EventSpecifer es) {
+  //  // for time, generate event
+  //  return DecolateEventBox{*this}.At(es);
+  //}
+  ScheduleControllBlock At(EventSpecifer es) {
+    return ScheduleRefBox{this->schedule_}.SCB({}).At(es);
   }
+  //DecolateEventBox Aft(EventSpecifer prev_es, EventSpecifer es) {
+  //  //return DecolateEventBox{*this}.At(es);
+  //  return At(this->schedule_[this->schedule_.size()-1].evt)
+  //        .Schedule([](auto&&a){
+  //          a.At(es) // TODO I want to return this!!
+  //        });
+  //}
 
   // Task is move-only and use only via reference.
   struct Task {
@@ -756,7 +873,7 @@ public:
       }
     } else {
       std::stringstream ss;
-      ss << "exception: faild to find tasks due to get value as type of Signal";
+      ss << "exception: faild to find tasks due to get value as type of Sig";
       throw std::logic_error(ss.str());
     }
 
@@ -774,7 +891,7 @@ public:
 
     // resolve Event(parent would have Action) from parent Task recursive
     vector<Event> ret;
-    for (const auto& parent_task : FindTasksActionAs<Signal>(sdl, task.evt.value())) {
+    for (const auto& parent_task : FindTasksActionAs<Sig>(sdl, task.evt.value())) {
       //cout << "[DEBUG] for parent task: " << parent_task.ToString() << endl;
       // skip if parent task contains in breadcrumb
       if (std::find(RANGE(breadcrumb), parent_task) != std::end(breadcrumb)) {
@@ -805,10 +922,10 @@ public:
 private:
   // not recommendation for user to use
   void AddTask(Event evt, ActionSpecifier action) {
-    if (std::get_if<Signal>(&evt.value())) {
+    if (std::get_if<Sig>(&evt.value())) {
       this->schedule_.sigtbl.push_back(Task{evt, action});
     } else {
-      this->schedule_.list.push_back(Task{evt, action});
+      this->schedule_.tbl.push_back(Task{evt, action});
     }
   }
 public:
@@ -822,37 +939,38 @@ public:
     return ss.str();
   }
 
-  vector<Task> ResolveScheduleToTask(const Schedule& sdl,int callid=0) const {
+private:
+  vector<Task> FlattenSchedule(const Schedule& sdl,int callid=0) const {
     vector<Task> ret;
-    //cout << "[DEBUG!!CALL("<<callid<<")]" << endl;
-    //cout << sdl.ToString() << endl;
-    for (auto&& task : sdl.list) {
+    cout << "[DEBUG!!CALL("<<callid<<")]" << endl;
+    cout << sdl.ToString() << endl;
+    for (auto&& task : sdl.tbl) {
       // Primitive task
       if (std::get_if<PrimitiveAction>(&task.action)) {
         //cout << "[DEBUG] Resolve pre-act: " << task.ToString() << endl;
         ret.push_back(task);
         continue;
       }
-      // task's Action with Signal
-      if (auto&& ptr_act = std::get_if<Signal>(&task.action)) {
+      // task's Action with Sig
+      if (auto&& ptr_act = std::get_if<Sig>(&task.action)) {
         //cout << "[DEBUG] Resolve signal for " << task.ToString() << endl;
         Schedule temp{{}, sdl.sigtbl};
         for (auto&& sigtask : sdl.sigtbl) {
           if (Event{*ptr_act} == sigtask.evt) {
             // Task is not still resolve action here
             // e.g.
-            // list: [
-            //   Task{task.evt, Signal{A}} ... target
+            // tbl: [
+            //   Task{task.evt, Sig{A}} ... target
             // ]
             // sigtbl: [
-            //   Task{Signal{A}, PreAct{x}} ... resolve!
-            //   Task{Signal{A}, Signal{B}} ... yet resolve.
-            //   Task{Signal{A}, Schedule{...}} ... yet resolve.
+            //   Task{Sig{A}, PreAct{x}} ... resolve!
+            //   Task{Sig{A}, Sig{B}} ... yet resolve.
+            //   Task{Sig{A}, Schedule{...}} ... yet resolve.
             // ]
-            temp.list.push_back(Task{task.evt, sigtask.action});
+            temp.tbl.push_back(Task{task.evt, sigtask.action});
           }
         }
-        const auto& result = ResolveScheduleToTask(temp, callid+1);
+        const auto& result = FlattenSchedule(temp, callid+1);
         ret.insert(ret.end(), RANGE(result));
         continue;
       }
@@ -869,7 +987,7 @@ public:
         //cout << "[temp]" << endl;
         //cout << temp.ToString() << endl;
 
-        auto&& result = ResolveScheduleToTask(temp, callid+1);
+        auto&& result = FlattenSchedule(temp, callid+1);
         // result task's event add task.evt
         for (auto&& r : result) { r.evt += task.evt; }
         if (result.size() > 0) {
@@ -879,16 +997,20 @@ public:
       }
     }
 
-    //cout << "[DEBUG!!EXIT("<<callid<<")]" << endl;
-    //int idx = 0;
-    //for (auto&& i : ret) {
-    //  cout << "["<<(idx++)<<"] " << i.ToString() << endl;
-    //}
+    cout << "[DEBUG!!EXIT("<<callid<<")]" << endl;
+    int idx = 0;
+    for (auto&& i : ret) {
+      cout << "["<<(idx++)<<"] " << i.ToString() << endl;
+    }
 
     return ret;
   }
-  vector<Task> ResolveScheduleToTask() const {
-    return ResolveScheduleToTask(this->schedule_);
+public:
+  vector<Task> FlattenSchedule() const {
+    return FlattenSchedule(this->schedule_);
+  }
+  void ClearSchedule() {
+    this->schedule_ = {};
   }
 public:
   // END-Schedule
@@ -1014,22 +1136,22 @@ public:
   }
 
   optional<std::reference_wrapper<Channel>> FindChannel(string name) const {
-    for (size_t i = 0; i < channels.size(); ++i) {
-      if (channels[i].name == name) return channels[i];
+    for (Channel& i : channels) {
+      if (i.name == name) return i;
     }
     return {};
   }
 
   optional<std::reference_wrapper<Node>> FindNode(string name) const {
-    for (size_t i = 0; i < nodes.size(); ++i) {
-      if (nodes[i].name == name) return nodes[i];
+    for (Node& i : nodes) {
+      if (i.name == name) return i;
     }
     return {};
   }
 
   optional<std::reference_wrapper<Port2>> FindPort2(string name) const {
-    for (size_t i = 0; i < ports.size(); ++i) {
-      if (ports[i].name == name) return ports[i];
+    for (Port2& i : ports) {
+      if (i.name == name) return i;
     }
     return {};
   }
@@ -1197,9 +1319,9 @@ public:
   }
 
   // NOTE mutable is meaning that allow returning reference from 'const function'
-  mutable vector<Node> nodes;
-  mutable vector<Channel> channels;
-  mutable vector<Port2> ports; // ports is channels which has used by box connecting.
+  mutable list<Node> nodes;
+  mutable list<Channel> channels;
+  mutable list<Port2> ports; // ports is channels which has used by box connecting.
 };
 
 class NsomBuilder {
@@ -1416,7 +1538,7 @@ public:
     json j;
     for (const auto& box : boxs) {
       int task_i = 0;
-      for (const auto& task : box.ResolveScheduleToTask()) {
+      for (const auto& task : box.FlattenSchedule()) {
         cout << "[DEBUG] " << task.ToString() << endl;
         string task_name = box.GetName() + "_T" + std::to_string(task_i);
         j[task_name] = GenAppBody(task);
@@ -1539,24 +1661,24 @@ void receive_and_action_test() {
     {"time" , 5 },
     {"rate" , "1Mbps" }
   };
-  //b0.Recv(5)
+  //b0.At(5)
   //  .Do("ping", ping_param)
-  //  .Recv(10)
+  //  .At(10)
   //  .Do("ping", ping_param)
   //  ;
-  //b0.Schedule(Time{15}, "ping", {{"shost", "${_Bb0_Nn0}"}});
+  //b0.Sdl(Time{15}, "ping", {{"shost", "${_Bb0_Nn0}"}});
 
-  b0.Recv(Range<Time>{5, 15, 5}) // expanded to [5,10,15]
+  b0.At(Range<Time>{5, 15, 5}) // expanded to [5,10,15]
     .Do("Ping", ping_param)
     ;
   
-  b1.Recv(1)
+  b1.At(1)
     .Do("Sink", {{"port",8080},{"time",30}})
     ;
 
   // TODO signal (rough draft)
-  //b1.Recv(Signal{"dummy"})
-  //  .Do("Signal", {{"param1",123},{"param2","abc"}})
+  //b1.At(Sig{"dummy"})
+  //  .Do("Sig", {{"param1",123},{"param2","abc"}})
   //  ;
 
   NsomBuilder builder("TestNet");
@@ -1575,31 +1697,102 @@ void signal_test() {
   Box sinker = Base.Fork("sinker", "Sinker");
   sender.ConnectPort("p0", sinker, "p0");
 
-  sender
-    .Recv(Time{1}).Do(Signal{"Sig1"})
-    .Recv(Time{1}).Do(Signal{"Sig2"})
-    .Recv(Time{2}).Do(Signal{"Sig1"})
-    .Recv(Signal{"Sig1"}).Do(Signal{"Sig3"})
-    .Recv(Signal{"Sig2"}).Do("Pre1", {})
-    //.Recv(Signal{"Sig2"}).Do(Signal{"Sig4"})
-    .Recv(Signal{"Sig3"}).Do("Pre1", {})
-    .Recv(Signal{"Sig3"}).Do(Signal{"Sig2"})
-    ;
+  //cout << "[TEST(1)]" << endl;
   //sender
-  //  .Recv(Signal{"Sig1"})
-  //  .Do("Pre1", {})
-  //  .Recv(Signal{"Sig2"})
-  //  .Do("Pre1", {})
+  //  .At(Time{1}).Do(Sig{"Sig1"})
+  //  .At(Time{1}).Do(Sig{"Sig2"}) // simultaneous do signal
+  //  .At(Time{2}).Do(Sig{"Sig1"})
+  //  .At(Sig{"Sig1"}).Do(Sig{"Sig3"})
+  //  .At(Sig{"Sig2"}).Do("Pre1", {})
+  //  .At(Sig{"Sig2"}).Do(Sig{"Sig4"})
+  //  .At(Sig{"Sig3"}).Do("Pre2", {})
+  //  .At(Sig{"Sig3"}).Do(Sig{"Sig2"})
+  //  ;
+  //for (const auto& i : sender.FlattenSchedule()) {
+  //  cout << "[test] " << i.ToString() << endl;
+  //}
+  //sender.ClearSchedule();
+
+  //cout << "[TEST(2)]" << endl;
+  //sender
+  //  .At(Time{1}).Do(Sig{"Sig1"})
+  //  .At(Sig{"Sig1"}).Do("Pre1",{})
+  //  .At(Sig{"Sig1"}).Do("Pre2",{})
+  //  ;
+  //for (const auto& i : sender.FlattenSchedule()) {
+  //  cout << "[test] " << i.ToString() << endl;
+  //}
+  //sender.ClearSchedule();
+
+  cout << "[TEST(3)]" << endl;
+
+  // Aft(time).Do(action)
+  // =
+  // Aft: (box:Box, base:Time, t:Time, act:Action) -> Box
+  // box.
+  //   .At(base).Do(Sig{"unique_sig"})
+  //   .At(Sig{"unique_sig"}).Schedule([](auto&&a){a
+  //     .At(t).Do(act)
+  //     return a;
+  //   });
+  ////Box Aft(Box box, Time base, Time t, Action act)
+  ////{
+  ////  Box ret;
+  ////  box
+  ////    .At(base)
+  ////    .Sdl([&ret](auto&&a){a
+  ////      .At(t).Do(act)
+  ////      ret = a;
+  ////    });
+  ////  return a;
+  ////}
+
+#define SB Sdl([](auto&&a){a
+#define SE })
+  //sender
+  //  .At(Time{0}).Do("Ping",{})
+  //  .At(Time{0}).SB
+  //    .At(Time{1}).Do("Ping",{})
+  //    ;
+  //  SE
   //  ;
   //sender
-  //  .Recv(Time{1}).Do(Signal{"Sig1"})
-  //  .Recv(Time{2}).Do(Signal{"Sig2"})
+  //  .At(Time{0}).Do("Pre1",{})
+  //  .Aft(Time{1}).Do("Pre2",{})
+  //  .Aft(Time{1}).Do("Pre3",{})
   //  ;
 
+  sender
+    //.At(Time{0}).Sdl([](auto&&a){a
+    //.At(Sig{"world"}).Do("Hoge",{})
+    .At(Time{0}).Sdl([](auto&&a){a
+      .At(Time{1}).Do(Sig{"hello"})
+      .At(Time{2}).Do(Sig{"world"})
+      ;
+    })
+    .At(Sig{"world"}).Do("Hoge",{})
+    ;
+  cout << sender.DumpSchedule() << endl;
+  for (const auto& i : sender.FlattenSchedule()) {
+    cout << "[test] " << i.ToString() << endl;
+  }
+  sender.ClearSchedule();
+
+  /// TEST
+  sender
+    .At(Sig{"Sig1"})
+    .Do("Pre1", {})
+    .At(Sig{"Sig2"})
+    .Do("Pre1", {})
+    ;
+  sender
+    .At(Time{1}).Do(Sig{"Sig1"})
+    .At(Time{2}).Do(Sig{"Sig2"})
+    ;
   NsomBuilder builder("TestNet");
   builder.AddBox(sender);
   builder.AddBox(sinker);
-  cout << builder.Build() << endl;
+  //cout << builder.Build() << endl;
 }
 
 void nic_switch_test() {
@@ -1628,23 +1821,23 @@ void nic_switch_test() {
   Sinker.TriConnect("n0", "c0", "p0");
   Sinker.TriConnect("n0", "c1", "p1");
   Sinker
-    .Recv(Signal{"Start"})
+    .At(Sig{"Start"})
     .Do("Sink", {{"port",8080},{"time",30}})
     ;
 
   // preparate application(schedule)
   RouteSwitch
-    .Recv(Signal{"SwitchPort0"})
-    .Schedule([](auto&&a){a
-      .Recv(Time{0}).Do("NicCtl", {{"idx", "1"},{"enable", "0"}})
-      .Recv(Time{0}).Do("NicCtl", {{"idx", "0"},{"enable", "1"}})
-      //.Recv(Time{0}).Do("PRE_0", {})
+    .At(Sig{"SwitchPort0"})
+    .Sdl([](auto&&a){a
+      .At(Time{0}).Do("NicCtl", {{"idx", "1"},{"enable", "0"}})
+      .At(Time{0}).Do("NicCtl", {{"idx", "0"},{"enable", "1"}})
+      //.At(Time{0}).Do("PRE_0", {})
       ;
     })
-    //.Recv(Signal{"SwitchPort1"}).Do("PRE_1", {})
-    .Recv(Signal{"SwitchPort1"})
+    //.At(Sig{"SwitchPort1"}).Do("PRE_1", {})
+    .At(Sig{"SwitchPort1"})
     .Do("NicCtl", {{"idx", "0"},{"enable", "0"}})
-    .Recv(Signal{"SwitchPort1"})
+    .At(Sig{"SwitchPort1"})
     .Do("NicCtl", {{"idx", "1"},{"enable", "1"}})
     ;
 
@@ -1672,44 +1865,44 @@ void nic_switch_test() {
 
   // schedule
   // global signal: SimStart
-  Box global("_global", "GlobalSignal"); // exclusive box for signal
+  Box global("_global", "GlobalSig"); // exclusive box for signal
   global
-    .Recv(Time{5})
-    .Do(Signal{"SimStart"})
+    .At(Time{5})
+    .Do(Sig{"SimStart"})
     ;
   // sinker
   s0
-    .Recv(Time{5})
-    .Do(Signal{"SimStart"})
-    .Recv(Signal{"SimStart"})
-    .Do(Signal{"Start"})
+    .At(Time{5})
+    .Do(Sig{"SimStart"})
+    .At(Sig{"SimStart"})
+    .Do(Sig{"Start"})
     ;
   // route switch
   rs
-    .Recv(Signal{"SwitchPort0"})
+    .At(Sig{"SwitchPort0"})
     .Do("ADD_PRE_0", {})
-    .Recv(Signal{"Start"})
-    .Schedule([](auto&&rs){rs
-      .Recv(Signal{"SwitchPort1"})
+    .At(Sig{"Start"})
+    .Sdl([](auto&&rs){rs
+      .At(Sig{"SwitchPort1"})
       .Do("OVERRIDE_PRE_1", {})
-      .Recv(Range<Time>{10,30,10}) // expanded to [10, 20]
-      .Schedule([](auto&&rs){rs
-        .Recv(Time{0})
-        .Do(Signal{"SwitchPort0"})
-        .Recv(Time{5})
-        .Do(Signal{"SwitchPort1"})
+      .At(Range<Time>{10,30,10}) // expanded to [10, 20]
+      .Sdl([](auto&&rs){rs
+        .At(Time{0})
+        .Do(Sig{"SwitchPort0"})
+        .At(Time{5})
+        .Do(Sig{"SwitchPort1"})
         ;
       })
-      .Recv(Signal{"Timeout"})
-      .Do(Signal{"Stop"})
+      .At(Sig{"Timeout"})
+      .Do(Sig{"Stop"})
       ;
     })
     ;
   rs
-    .Recv(Time{5})
-    .Do(Signal{"SimStart"})
-    .Recv(Signal{"SimStart"})
-    .Do(Signal{"Start"})
+    .At(Time{5})
+    .Do(Sig{"SimStart"})
+    .At(Sig{"SimStart"})
+    .Do(Sig{"Start"})
     ;
 
   // DEBUG
@@ -1732,8 +1925,8 @@ void test() {
   // runtime_error: user responsibility
   try{
   //receive_and_action_test();
-  //signal_test();
-  nic_switch_test();
+  signal_test();
+  //nic_switch_test();
   }catch(const std::exception& e) {
     std::cerr
       //<< e.what()
