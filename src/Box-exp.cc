@@ -665,6 +665,7 @@ public:
   struct ScheduleControllBlock;
   struct ScheduleRefBox {
     Schedule& value;
+    optional<std::reference_wrapper<Schedule>> super;
 
     static ScheduleControllBlock
     CreateSCB(ScheduleRefBox srb, optional<Event> evt_last)
@@ -693,7 +694,7 @@ public:
 
       // Action type PriAct or Sig or Schedule
       if (Schedule *p_sdl = std::get_if<Schedule>(&p_last->action)) {
-        return CreateSCB(ScheduleRefBox{*p_sdl}, p_last->evt); // return SCB
+        return CreateSCB(ScheduleRefBox{*p_sdl, this->value}, p_last->evt); // return SCB
       }
 
       return {};
@@ -718,7 +719,8 @@ public:
         // Action type PriAct or Sig or Schedule
         if (Schedule *p_sdl = std::get_if<Schedule>(&p_last->action)) {
           scbs.push_back(
-              CreateSCB(ScheduleRefBox{*p_sdl}, p_last->evt) // add SCB
+              //CreateSCB(ScheduleRefBox{*p_sdl, this->value}, p_last->evt) // add SCB
+              CreateSCB(ScheduleRefBox{*p_sdl, this->value}, {}) // add SCB
               );
         }
       }
@@ -742,40 +744,59 @@ public:
       return *this;
     }
     // should be call after Do
-    ScheduleControllBlock Aft(EventSpecifer es) {
+    //ScheduleControllBlock Aft(EventSpecifer es) {
+    //  //if (not evt_last) {
+    //  //  throw std::runtime_error("Aft failed, dut to no exist befor event");
+    //  //}
+
+    //  // nest
+    //  // .At(0).Aft(t) -> .At(0).Sdl{.At(1).Sdl{return here_scb}}
+    //  ScheduleControllBlock nest_scb =
+    //    this->srb.AddTask(evt_last.value_or(Event{0}), Schedule{}).value();
+    //  vector<ScheduleControllBlock>
+    //    nest2 = nest_scb.srb.AddTask(es, Schedule{});// TODO AddTask with EventSpecifer
+    //  ScheduleControllBlock nest_scb2 = nest2[nest2.size()-1]; //return the last of element
+    //  return nest_scb2;
+    //}
+    ScheduleControllBlock Aft() {
       if (not evt_last) {
         throw std::runtime_error("Aft failed, dut to no exist befor event");
       }
-      // nest
-      // .At(0).Aft(t) -> .At(0).Sdl{.At(1).Sdl{return here_scb}}
-      optional<ScheduleControllBlock>
-        nest = this->srb.AddTask(evt_last.value(), Schedule{});
-      ScheduleControllBlock nest_scb = nest.value();
-      vector<ScheduleControllBlock>
-        nest2 = nest_scb.srb.AddTask(es, Schedule{});// TODO AddTask with EventSpecifer
-      ScheduleControllBlock nest_scb2 = nest2[nest2.size()-1]; //return the last of element
-      return nest_scb2;
+
+      ScheduleControllBlock nest_scb =
+        this->srb.AddTask(evt_last.value_or(Event{0}), Schedule{}).value();
+      return nest_scb;
+    }
+    ScheduleControllBlock EndAft() {
+      if (not srb.super) {
+        throw std::runtime_error("EndAft failed, dut to no exist super schedule control block");
+      }
+
+      return {this->srb.super.value()};
     }
     ScheduleControllBlock Do(string act_type, json param) {
       if (this->evts.size() == 0) this->At(0);
       for (const auto& e : this->evts) {
         srb.AddTask(e, PrimitiveAction{act_type, param});
       }
-      return {this->srb, this->evt_last}; //reset
+      return {this->srb, this->evt_last};
+      //return {this->srb}; //reset
     }
     ScheduleControllBlock Do(Sig sig) {
       if (this->evts.size() == 0) this->At(0);
       for (const auto& e : this->evts) {
         srb.AddTask(e, sig);
       }
-      return {this->srb, this->evt_last}; //reset
+      return {this->srb, this->evt_last};
+      //return {this->srb}; //reset
     }
     ScheduleControllBlock Do(Schedule sdl) {
       if (this->evts.size() == 0) this->At(0);
       for (const auto& e : this->evts) {
         srb.AddTask(e, sdl);
       }
-      return {this->srb, this->evt_last}; //reset
+      return {this->srb, this->evt_last};
+      //return {this->srb}; //reset
     }
     ScheduleControllBlock Sdl(
         const std::function<void(ScheduleControllBlock&)>& cb)
@@ -960,8 +981,8 @@ public:
 private:
   vector<Task> FlattenSchedule(const Schedule& sdl,int callid=0) const {
     vector<Task> ret;
-    cout << "[DEBUG!!CALL("<<callid<<")]" << endl;
-    cout << sdl.ToString() << endl;
+    //cout << "[DEBUG!!CALL("<<callid<<")]" << endl;
+    //cout << sdl.ToString() << endl;
     for (auto&& task : sdl.tbl) {
       // Primitive task
       if (std::get_if<PrimitiveAction>(&task.action)) {
@@ -1015,11 +1036,11 @@ private:
       }
     }
 
-    cout << "[DEBUG!!EXIT("<<callid<<")]" << endl;
-    int idx = 0;
-    for (auto&& i : ret) {
-      cout << "["<<(idx++)<<"] " << i.ToString() << endl;
-    }
+    //cout << "[DEBUG!!EXIT("<<callid<<")]" << endl;
+    //int idx = 0;
+    //for (auto&& i : ret) {
+    //  cout << "["<<(idx++)<<"] " << i.ToString() << endl;
+    //}
 
     return ret;
   }
@@ -1715,78 +1736,53 @@ void signal_test() {
   Box sinker = Base.Fork("sinker", "Sinker");
   sender.ConnectPort("p0", sinker, "p0");
 
-  //cout << "[TEST(1)]" << endl;
-  //sender
-  //  .At(Time{1}).Do(Sig{"Sig1"})
-  //  .At(Time{1}).Do(Sig{"Sig2"}) // simultaneous do signal
-  //  .At(Time{2}).Do(Sig{"Sig1"})
-  //  .At(Sig{"Sig1"}).Do(Sig{"Sig3"})
-  //  .At(Sig{"Sig2"}).Do("Pre1", {})
-  //  .At(Sig{"Sig2"}).Do(Sig{"Sig4"})
-  //  .At(Sig{"Sig3"}).Do("Pre2", {})
-  //  .At(Sig{"Sig3"}).Do(Sig{"Sig2"})
-  //  ;
-  //for (const auto& i : sender.FlattenSchedule()) {
-  //  cout << "[test] " << i.ToString() << endl;
-  //}
-  //sender.ClearSchedule();
+  cout << "[TEST(1)]" << endl;
+  sender
+    .At(Time{1}).Do(Sig{"Sig1"})
+    .At(Time{1}).Do(Sig{"Sig2"}) // simultaneous do signal
+    .At(Time{2}).Do(Sig{"Sig1"})
+    .At(Sig{"Sig1"}).Do(Sig{"Sig3"})
+    .At(Sig{"Sig2"}).Do("Pre1", {})
+    .At(Sig{"Sig2"}).Do(Sig{"Sig4"})
+    .At(Sig{"Sig3"}).Do("Pre2", {})
+    .At(Sig{"Sig3"}).Do(Sig{"Sig2"})
+    ;
+  for (const auto& i : sender.FlattenSchedule()) {
+    cout << "[test] " << i.ToString() << endl;
+  }
+  sender.ClearSchedule();
 
-  //cout << "[TEST(2)]" << endl;
-  //sender
-  //  .At(Time{1}).Do(Sig{"Sig1"})
-  //  .At(Sig{"Sig1"}).Do("Pre1",{})
-  //  .At(Sig{"Sig1"}).Do("Pre2",{})
-  //  ;
-  //for (const auto& i : sender.FlattenSchedule()) {
-  //  cout << "[test] " << i.ToString() << endl;
-  //}
-  //sender.ClearSchedule();
+  cout << "[TEST(2)]" << endl;
+  sender
+    .At(Time{1}).Do(Sig{"Sig1"})
+    .At(Sig{"Sig1"}).Do("Pre1",{})
+    .At(Sig{"Sig1"}).Do("Pre2",{})
+    ;
+  for (const auto& i : sender.FlattenSchedule()) {
+    cout << "[test] " << i.ToString() << endl;
+  }
+  sender.ClearSchedule();
 
   cout << "[TEST(3)]" << endl;
+  sender
+    .At(0).Do("Prepare",{})
+    .At(5).Aft()
+      .Do(Sig{"Ready"})
 
-  // Aft(time).Do(action)
-  // =
-  // Aft: (box:Box, base:Time, t:Time, act:Action) -> Box
-  // box.
-  //   .At(base).Do(Sig{"unique_sig"})
-  //   .At(Sig{"unique_sig"}).Schedule([](auto&&a){a
-  //     .At(t).Do(act)
-  //     return a;
-  //   });
-  ////Box Aft(Box box, Time base, Time t, Action act)
-  ////{
-  ////  Box ret;
-  ////  box
-  ////    .At(base)
-  ////    .Sdl([&ret](auto&&a){a
-  ////      .At(t).Do(act)
-  ////      ret = a;
-  ////    });
-  ////  return a;
-  ////}
+    .At(Sig{"Ready"}).Aft()
+      .Do("Send",{})
+      .Do("Ping",{})
+      .Do("FlowPattern",{})
+      .Do("Sink",{})
+      .Do("NicCtl",{})
+      .Do("Move",{})
+    ;
+  for (const auto& i : sender.FlattenSchedule()) {
+    cout << "[test] " << i.ToString() << endl;
+  }
+  sender.ClearSchedule();
 
-#define SB Sdl([](auto&&a){a
-#define SE })
-  //sender
-  //  .At(Time{0}).Do("Ping",{})
-  //  .At(Time{0}).SB
-  //    .At(Time{1}).Do("Ping",{})
-  //    ;
-  //  SE
-  //  ;
-  //sender
-  //  .At(0).Do("Prepare",{})
-  //  .Aft(10).Do(Sig{"Ready"})
-
-  //  .At(Sig{"Ready"}).Aft(1).Do("Send",{})
-
-  //  .At().Do("Ping",{})
-  //  .At().Do("FlowPattern",{})
-  //  .At().Do("Sink",{})
-  //  .At().Do("NicCtl",{})
-  //  .At().Do("Move",{})
-  //  ;
-
+  cout << "[TEST(4)]" << endl;
   sender
     //.At(Time{0}).Sdl([](auto&&a){a
     //.At(Sig{"world"}).Do("Hoge",{})
@@ -1797,12 +1793,52 @@ void signal_test() {
     })
     .At(Sig{"hello"}).Do("Honma",{}) // 11*
     .At(Sig{"world"}).Do("Himawari",{}) // 12*
-      .Aft(1) // 13
-      .At(1).Do("🌻",{}) // 14*
-      .At(0).Do("🌻",{}) // 13*
-        .Aft(2).Do("📕",{}) // 15*
-          .Aft(3).Do("📕",{}) // 18*
+      .At(Sig{"world"}).Aft() // 12
+      .At(1).Do("🌻",{}) // 13*
+      .At(0).Do("🌻",{}) // 12*
+        .At(2).Aft().Do("📕",{}) // 14*
+          .At(1).Do("(・ヮ・🌻)",{}) // 15*
+          .At(3).Aft().Do("📕",{}) // 17*
     ;
+  //cout << sender.DumpSchedule() << endl;
+  for (const auto& i : sender.FlattenSchedule()) {
+    cout << "[test] " << i.ToString() << endl;
+  }
+  sender.ClearSchedule();
+
+  cout << "[TEST(5)]" << endl;
+  sender
+    .At(0).Do("0",{})
+    .At(1).Do("1",{})
+    .At(5).Aft()
+      .At(0).Do("5",{})
+      .At(2).Do("7",{})
+      .At(7).Aft() // 5+7=12
+        .At(1).Aft() // 12+1=13
+          .Do("13",{})
+          .Do("13",{})
+    ;
+
+  //cout << sender.DumpSchedule() << endl;
+  for (const auto& i : sender.FlattenSchedule()) {
+    cout << "[test] " << i.ToString() << endl;
+  }
+  sender.ClearSchedule();
+
+  cout << "[TEST(6)]" << endl;
+  sender
+    .At(2).Do(Sig{"SimReady"})
+
+    .At(Sig{"SimReady"}).Do("recv_sim_ready",{})
+
+    .At(Sig{"SimReady"}).Aft()
+      .At(4).Do(Sig{"AppStart"})
+      .At(6).Do("end",{})
+    .EndAft()
+
+    .At(Sig{"AppStart"}).Do("recv_app_start",{})
+    ;
+
   cout << sender.DumpSchedule() << endl;
   for (const auto& i : sender.FlattenSchedule()) {
     cout << "[test] " << i.ToString() << endl;
