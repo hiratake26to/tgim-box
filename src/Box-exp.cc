@@ -523,8 +523,6 @@ public:
 
   struct Task; //prototype
   struct Schedule {
-    //vector<Task> tbl;
-    //vector<Task> sigtbl;
     // cannot use vector dut to possible invalid reference
     //https://ja.cppreference.com/w/cpp/container/list
     list<Task> tbl;
@@ -664,9 +662,6 @@ public:
     }
   };
 
-  //
-  // TODO
-  //
   struct ScheduleControllBlock;
   struct ScheduleRefBox {
     Schedule& value;
@@ -703,6 +698,33 @@ public:
 
       return {};
     }
+    // [Event] -> [Action] -> [SCB]
+    vector<ScheduleControllBlock>
+    AddTask(EventSpecifer es, ActionSpecifier action)
+    {
+      vector<ScheduleControllBlock> scbs;
+      vector<Event> evts = es.value();
+      for (const Event& evt : evts) {
+        Task* p_last = nullptr; // a task that added last to hold for CreateSCB
+        if (std::get_if<Sig>(&evt.value())) {
+          this->value.sigtbl.push_back(Task{evt, action});
+          p_last = &this->value.sigtbl.back();
+        } else {
+          this->value.tbl.push_back(Task{evt, action});
+          p_last = &this->value.tbl.back();
+        }
+        if (p_last == nullptr) throw std::logic_error("p_last is nullptr!");
+
+        // Action type PriAct or Sig or Schedule
+        if (Schedule *p_sdl = std::get_if<Schedule>(&p_last->action)) {
+          scbs.push_back(
+              CreateSCB(ScheduleRefBox{*p_sdl}, p_last->evt) // add SCB
+              );
+        }
+      }
+
+      return scbs;
+    }
 
     Schedule GetSchedule() const {
       return value;
@@ -725,26 +747,31 @@ public:
         throw std::runtime_error("Aft failed, dut to no exist befor event");
       }
       // nest
-      Schedule empty;
+      // .At(0).Aft(t) -> .At(0).Sdl{.At(1).Sdl{return here_scb}}
       optional<ScheduleControllBlock>
-        nest = srb.AddTask(evt_last.value(), empty);
-      // return result at last
-      ScheduleControllBlock scb = nest.value();
-      return scb.At(es);
+        nest = this->srb.AddTask(evt_last.value(), Schedule{});
+      ScheduleControllBlock nest_scb = nest.value();
+      vector<ScheduleControllBlock>
+        nest2 = nest_scb.srb.AddTask(es, Schedule{});// TODO AddTask with EventSpecifer
+      ScheduleControllBlock nest_scb2 = nest2[nest2.size()-1]; //return the last of element
+      return nest_scb2;
     }
     ScheduleControllBlock Do(string act_type, json param) {
+      if (this->evts.size() == 0) this->At(0);
       for (const auto& e : this->evts) {
         srb.AddTask(e, PrimitiveAction{act_type, param});
       }
       return {this->srb, this->evt_last}; //reset
     }
     ScheduleControllBlock Do(Sig sig) {
+      if (this->evts.size() == 0) this->At(0);
       for (const auto& e : this->evts) {
         srb.AddTask(e, sig);
       }
       return {this->srb, this->evt_last}; //reset
     }
     ScheduleControllBlock Do(Schedule sdl) {
+      if (this->evts.size() == 0) this->At(0);
       for (const auto& e : this->evts) {
         srb.AddTask(e, sdl);
       }
@@ -753,8 +780,16 @@ public:
     ScheduleControllBlock Sdl(
         const std::function<void(ScheduleControllBlock&)>& cb)
     {
-      cb(*this);
-      return Do(this->srb.GetSchedule());
+      if (this->evts.size() == 0) this->At(0);
+      // from a new Schedule into a ScheduleRefBox,
+      // then create a SCB for nested-schedule 
+      // and call the callback with the SCB
+      Schedule nest_sdl;
+      //auto scb = ScheduleRefBox{temp}.SCB(evt_last); // TODO better calling with evt_last?
+      auto scb = ScheduleRefBox{nest_sdl}.SCB({});
+      cb(scb);
+      // nested-schedule into this 
+      return this->Do(nest_sdl);
     }
   };
 
@@ -769,12 +804,6 @@ public:
       this->evts.insert(this->evts.end(), RANGE(v));
       return *this;
     }
-    //AfterEventBox Aft(EventSpecifer es) {
-    //  Event& last = evt_last.value();
-    //  cout << "[DEBUG] last: " << last.ToString() << endl;
-    //  Box sdl_box("tmp","tmp");
-    //  return {*this, sdl_box, last, es};
-    //}
     DecolateEventBox Do(string act_type, json param) {
       // generate application
       // params: [ HandlerName, HandlerParameter ]
@@ -808,21 +837,10 @@ public:
     //  return Do(Sig{sig});
     //}
   };
-  // Box::At method is bootstrap of DecolateEventBox
-  //DecolateEventBox At(EventSpecifer es) {
-  //  // for time, generate event
-  //  return DecolateEventBox{*this}.At(es);
-  //}
+  // Box::At method is bootstrap of ScheduleControllBlock
   ScheduleControllBlock At(EventSpecifer es) {
     return ScheduleRefBox{this->schedule_}.SCB({}).At(es);
   }
-  //DecolateEventBox Aft(EventSpecifer prev_es, EventSpecifer es) {
-  //  //return DecolateEventBox{*this}.At(es);
-  //  return At(this->schedule_[this->schedule_.size()-1].evt)
-  //        .Schedule([](auto&&a){
-  //          a.At(es) // TODO I want to return this!!
-  //        });
-  //}
 
   // Task is move-only and use only via reference.
   struct Task {
@@ -1757,20 +1775,31 @@ void signal_test() {
   //  SE
   //  ;
   //sender
-  //  .At(Time{0}).Do("Pre1",{})
-  //  .Aft(Time{1}).Do("Pre2",{})
-  //  .Aft(Time{1}).Do("Pre3",{})
+  //  .At(0).Do("Prepare",{})
+  //  .Aft(10).Do(Sig{"Ready"})
+
+  //  .At(Sig{"Ready"}).Aft(1).Do("Send",{})
+
+  //  .At().Do("Ping",{})
+  //  .At().Do("FlowPattern",{})
+  //  .At().Do("Sink",{})
+  //  .At().Do("NicCtl",{})
+  //  .At().Do("Move",{})
   //  ;
 
   sender
     //.At(Time{0}).Sdl([](auto&&a){a
     //.At(Sig{"world"}).Do("Hoge",{})
-    .At(Time{0}).Sdl([](auto&&a){a
-      .At(Time{1}).Do(Sig{"hello"})
-      .At(Time{2}).Do(Sig{"world"})
+    .At(10).Sdl([](auto&&a){a
+      .At(1).Do(Sig{"hello"}) // 11
+      .At(2).Do(Sig{"world"}) // 12
       ;
     })
-    .At(Sig{"world"}).Do("Hoge",{})
+    .At(Sig{"hello"}).Do("Honma",{}) // 11*
+    .At(Sig{"world"}).Do("Himawari",{}) // 12*
+      .Aft(1) // 13
+      .At(1).Do("🌻",{}) // 14*
+      .At(0).Do("🌻",{}) // 13*
     ;
   cout << sender.DumpSchedule() << endl;
   for (const auto& i : sender.FlattenSchedule()) {
