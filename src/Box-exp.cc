@@ -1800,6 +1800,8 @@ void signal_test() {
       .Aft(1) // 13
       .At(1).Do("🌻",{}) // 14*
       .At(0).Do("🌻",{}) // 13*
+        .Aft(2).Do("📕",{}) // 15*
+          .Aft(3).Do("📕",{}) // 18*
     ;
   cout << sender.DumpSchedule() << endl;
   for (const auto& i : sender.FlattenSchedule()) {
