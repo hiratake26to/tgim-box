@@ -1,4 +1,6 @@
 #include "common.hpp"
+#include "../schedule/task/action.hpp"
+
 // Task is move-only and use only via reference.
 string Task::ToString(int l) const {
   std::stringstream ss;

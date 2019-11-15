@@ -9,7 +9,7 @@
 #include <variant>
 #include <nlohmann/json.hpp>
 
-#include "Signal.hpp"
+#include "signal.hpp"
 
 using std::optional;
 using std::string;

@@ -1,15 +1,18 @@
 #include "common.hpp"
 
-string ActionToString(const ActionSpecifier& act, int l) {
+//////////////////////////////////////////////////
+// PrimitiveAction (ActionType, AppType)
+
+string ActionToString(const Action& act, int l) {
   std::stringstream ss;
   ss << "Action{";
   if (const auto& val = std::get_if<PrimitiveAction>(&act)) {
     ss << val->ToString();
   } else if (const auto& val = std::get_if<Sig>(&act)) {
     ss << val->ToString();
-  } else if (const auto& val = std::get_if<Schedule>(&act)) {
+  } else if (const auto& val = std::get_if<ScheduleRef>(&act)) {
     ss << endl;
-    ss << val->ToString(l);
+    ss << val->get().ToString(l);
   } else {
     throw std::logic_error("could not action to string!");
   }
@@ -19,7 +22,7 @@ string ActionToString(const ActionSpecifier& act, int l) {
 
 //////////////////////////////////////////////////
 // PrimitiveAction (ActionType, AppType)
-//
+
 PrimitiveAction::PrimitiveAction(string type, json param)
 : type(type), param(param)
 {

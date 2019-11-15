@@ -14,7 +14,7 @@
 #include <any>
 #include <variant>
 #include <boost/core/demangle.hpp>
-#include "../Schedule/Schedule.hpp"
+#include "../schedule/schedule.hpp"
 
 using std::cout;
 using std::endl;
@@ -123,6 +123,7 @@ public:
     vector<Task> ret;
     if (auto&& evt_act = std::get_if<T>(&value)) {
       for (const auto& task : tasks)
+      //if (auto&& task_act = std::get_if<T>(&task.action.value())) {
       if (auto&& task_act = std::get_if<T>(&task.action)) {
         //cout << "[DEBUG] compare: "
         //  << ActionToString(*evt_act) 
@@ -186,7 +187,7 @@ public:
 
 private:
   // not recommendation for user to use
-  void AddTask(Event evt, ActionSpecifier action) {
+  void AddTask(Event evt, Action action) {
     if (std::get_if<Sig>(&evt.value())) {
       this->schedule_.sigtbl.push_back(Task{evt, action});
     } else {
@@ -240,8 +241,8 @@ private:
         continue;
       }
       // task is Schedule
-      if (auto&& ptr = std::get_if<Schedule>(&task.action)) {
-        const auto& nested_sdl = *ptr;
+      if (auto&& ptr = std::get_if<ScheduleRef>(&task.action)) {
+        const Schedule& nested_sdl = ptr->get();
         const auto& temp = nested_sdl.ConcatSigtable(sdl);
 
         //cout << "[DEBUG] Resolve nested schedule for " << task.ToString() << endl;

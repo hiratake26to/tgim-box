@@ -27,7 +27,7 @@ using std::any;
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
-#include "../Schedule/Schedule.hpp"
+#include "../schedule/schedule.hpp"
 
 #define RANGE(v) v.begin(), v.end()
 #define UNIQUE(v) {\

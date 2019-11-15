@@ -2,7 +2,6 @@
 
 //////////////////////////////////////////////////
 // ScheduleRefBox
-//
 
 ScheduleControllBlock
 ScheduleRefBox::CreateSCB(ScheduleRefBox srb, optional<Event> evt_last)
@@ -17,7 +16,7 @@ ScheduleRefBox::SCB(optional<Event> evt_last)
 }
 
 optional<ScheduleControllBlock>
-ScheduleRefBox::AddTask(Event evt, ActionSpecifier action)
+ScheduleRefBox::AddTask(Event evt, Action action)
 {
   Task* p_last = nullptr;
   if (std::get_if<Sig>(&evt.value())) {
@@ -30,15 +29,15 @@ ScheduleRefBox::AddTask(Event evt, ActionSpecifier action)
   if (p_last == nullptr) throw std::logic_error("p_last is nullptr!");
 
   // Action type PriAct or Sig or Schedule
-  if (Schedule *p_sdl = std::get_if<Schedule>(&p_last->action)) {
-    return CreateSCB(ScheduleRefBox{*p_sdl, this->value}, p_last->evt); // return SCB
+  if (ScheduleRef *p_sdl_ref = std::get_if<ScheduleRef>(&p_last->action)) {
+    return CreateSCB(ScheduleRefBox{p_sdl_ref->get(), this->value}, p_last->evt); // return SCB
   }
 
   return {};
 }
 // [Event] -> [Action] -> [SCB]
 vector<ScheduleControllBlock>
-ScheduleRefBox::AddTask(EventSpecifer es, ActionSpecifier action)
+ScheduleRefBox::AddTask(EventSpecifer es, Action action)
 {
   vector<ScheduleControllBlock> scbs;
   vector<Event> evts = es.value();
@@ -54,10 +53,10 @@ ScheduleRefBox::AddTask(EventSpecifer es, ActionSpecifier action)
     if (p_last == nullptr) throw std::logic_error("p_last is nullptr!");
 
     // Action type PriAct or Sig or Schedule
-    if (Schedule *p_sdl = std::get_if<Schedule>(&p_last->action)) {
+    if (ScheduleRef *p_sdl = std::get_if<ScheduleRef>(&p_last->action)) {
       scbs.push_back(
           //CreateSCB(ScheduleRefBox{*p_sdl, this->value}, p_last->evt) // add SCB
-          CreateSCB(ScheduleRefBox{*p_sdl, this->value}, {}) // add SCB
+          CreateSCB(ScheduleRefBox{p_sdl->get(), this->value}, {}) // add SCB
           );
     }
   }
@@ -71,7 +70,6 @@ Schedule ScheduleRefBox::GetSchedule() const {
 
 //////////////////////////////////////////////////
 // ScheduleControllBlock
-//
 
 ScheduleControllBlock
 ScheduleControllBlock::At(EventSpecifer es) {
@@ -86,17 +84,19 @@ ScheduleControllBlock::Aft() {
     throw std::runtime_error("Aft failed, dut to no exist befor event");
   }
 
+  this->srb.value.children.push_back(Schedule{});
+  ScheduleRef sr = ScheduleRef{this->srb.value.children.back()};
   ScheduleControllBlock nest_scb =
-    this->srb.AddTask(evt_last.value_or(Event{0}), Schedule{}).value();
+    this->srb.AddTask(evt_last.value_or(Event{0}), sr).value();
   return nest_scb;
 }
 ScheduleControllBlock 
 ScheduleControllBlock::EndAft() {
-  if (not srb.super) {
-    throw std::runtime_error("EndAft failed, dut to no exist super schedule control block");
+  if (not srb.parent) {
+    throw std::runtime_error("EndAft failed, dut to no exist parent schedule control block");
   }
 
-  return {this->srb.super.value()};
+  return {this->srb.parent.value()};
 }
 ScheduleControllBlock 
 ScheduleControllBlock::Do(string act_type, json param) {
@@ -118,9 +118,12 @@ ScheduleControllBlock::Do(Sig sig) {
 }
 ScheduleControllBlock 
 ScheduleControllBlock::Do(Schedule sdl) {
+  this->srb.value.children.push_back(sdl);
+  ScheduleRef sr = ScheduleRef{this->srb.value.children.back()};
+
   if (this->evts.size() == 0) this->At(0);
   for (const auto& e : this->evts) {
-    srb.AddTask(e, sdl);
+    srb.AddTask(e, sr);
   }
   return {this->srb, this->evt_last};
   //return {this->srb}; //reset

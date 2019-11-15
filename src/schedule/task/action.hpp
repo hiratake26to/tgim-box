@@ -9,8 +9,8 @@
 #include <variant>
 #include <nlohmann/json.hpp>
 
-#include "Signal.hpp"
-#include "../Schedule.hpp"
+#include "signal.hpp"
+#include "../schedule.hpp"
 
 using std::optional;
 using std::string;
@@ -21,7 +21,18 @@ using std::map;
 using std::any;
 using json = nlohmann::json;
 
+// prototype
+struct PrimitiveAction;
+
+///
 // Action
+//
+using Action=std::variant< PrimitiveAction, Sig, ScheduleRef>;
+string ActionToString(const Action& act, int l=0);
+
+///
+// PrimitiveAction
+//
 struct PrimitiveAction {
   string type; // ActionType (NSOM-AppType)
   json param;
