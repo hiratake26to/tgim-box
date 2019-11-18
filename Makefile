@@ -4,9 +4,10 @@ CXX=clang++
 CXXFLAGS=-g3 -std=c++2a $(INCLUDE)
 INCLUDE=-I./include
 SOURCES=$(wildcard ./src/src/*.cc)
-OBJS=src/Box-exp.o $(SOURCES:.cc=.o)
+PROGRAM=box-script
+OBJS=src/$(PROGRAM).o $(SOURCES:.cc=.o)
 
-Box-exp: $(OBJS)
+$(PROGRAM): $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
 .PHONY: clean
@@ -15,4 +16,4 @@ debug:
 	echo $(OBJS)
 
 clean:
-	rm -fr $(OBJS) Box-exp
+	rm -fr $(OBJS) $(PROGRAM)

@@ -10,7 +10,7 @@ ScheduleRefBox::CreateSCB(ScheduleRefBox srb, optional<Event> evt_last)
 }
 
 ScheduleControllBlock
-ScheduleRefBox::SCB(optional<Event> evt_last)
+ScheduleRefBox::SCB(optional<Event> evt_last) const
 {
   return CreateSCB(*this, evt_last);
 }
@@ -20,17 +20,17 @@ ScheduleRefBox::AddTask(Event evt, Action action)
 {
   Task* p_last = nullptr;
   if (std::get_if<Sig>(&evt.value())) {
-    this->value.sigtbl.push_back(Task{evt, action});
-    p_last = &this->value.sigtbl.back();
+    this->value.get().sigtbl.push_back(Task{evt, action});
+    p_last = &this->value.get().sigtbl.back();
   } else {
-    this->value.tbl.push_back(Task{evt, action});
-    p_last = &this->value.tbl.back();
+    this->value.get().tbl.push_back(Task{evt, action});
+    p_last = &this->value.get().tbl.back();
   }
   if (p_last == nullptr) throw std::logic_error("p_last is nullptr!");
 
   // Action type PriAct or Sig or Schedule
   if (ScheduleRef *p_sdl_ref = std::get_if<ScheduleRef>(&p_last->action)) {
-    return CreateSCB(ScheduleRefBox{p_sdl_ref->get(), this->value}, p_last->evt); // return SCB
+    return CreateSCB(ScheduleRefBox{p_sdl_ref->get()}, p_last->evt); // return SCB
   }
 
   return {};
@@ -44,19 +44,19 @@ ScheduleRefBox::AddTask(EventSpecifer es, Action action)
   for (const Event& evt : evts) {
     Task* p_last = nullptr; // a task that added last to hold for CreateSCB
     if (std::get_if<Sig>(&evt.value())) {
-      this->value.sigtbl.push_back(Task{evt, action});
-      p_last = &this->value.sigtbl.back();
+      this->value.get().sigtbl.push_back(Task{evt, action});
+      p_last = &this->value.get().sigtbl.back();
     } else {
-      this->value.tbl.push_back(Task{evt, action});
-      p_last = &this->value.tbl.back();
+      this->value.get().tbl.push_back(Task{evt, action});
+      p_last = &this->value.get().tbl.back();
     }
     if (p_last == nullptr) throw std::logic_error("p_last is nullptr!");
 
     // Action type PriAct or Sig or Schedule
     if (ScheduleRef *p_sdl = std::get_if<ScheduleRef>(&p_last->action)) {
       scbs.push_back(
-          //CreateSCB(ScheduleRefBox{*p_sdl, this->value}, p_last->evt) // add SCB
-          CreateSCB(ScheduleRefBox{p_sdl->get(), this->value}, {}) // add SCB
+          //CreateSCB(ScheduleRefBox{*p_sdl}, p_last->evt) // add SCB
+          CreateSCB(ScheduleRefBox{p_sdl->get()}, {}) // add SCB
           );
     }
   }
@@ -84,19 +84,21 @@ ScheduleControllBlock::Aft() {
     throw std::runtime_error("Aft failed, dut to no exist befor event");
   }
 
-  this->srb.value.children.push_back(Schedule{});
-  ScheduleRef sr = ScheduleRef{this->srb.value.children.back()};
+  this->srb.value.get().children.push_back(Schedule{{},{},this->srb.value,{}});
+  ScheduleRef sr = ScheduleRef{this->srb.value.get().children.back()};
   ScheduleControllBlock nest_scb =
     this->srb.AddTask(evt_last.value_or(Event{0}), sr).value();
   return nest_scb;
 }
 ScheduleControllBlock 
 ScheduleControllBlock::EndAft() {
-  if (not srb.parent) {
+  if (not srb.value.get().parent) {
     throw std::runtime_error("EndAft failed, dut to no exist parent schedule control block");
   }
 
-  return {this->srb.parent.value()};
+  return ScheduleControllBlock{
+    ScheduleRefBox{this->srb.value.get().parent.value()}
+  };
 }
 ScheduleControllBlock 
 ScheduleControllBlock::Do(string act_type, json param) {
@@ -118,8 +120,8 @@ ScheduleControllBlock::Do(Sig sig) {
 }
 ScheduleControllBlock 
 ScheduleControllBlock::Do(Schedule sdl) {
-  this->srb.value.children.push_back(sdl);
-  ScheduleRef sr = ScheduleRef{this->srb.value.children.back()};
+  this->srb.value.get().children.push_back(sdl);
+  ScheduleRef sr = ScheduleRef{this->srb.value.get().children.back()};
 
   if (this->evts.size() == 0) this->At(0);
   for (const auto& e : this->evts) {
@@ -131,16 +133,22 @@ ScheduleControllBlock::Do(Schedule sdl) {
 ScheduleControllBlock 
 ScheduleControllBlock::Sdl(const std::function<void(ScheduleControllBlock&)>& cb)
 {
-  if (this->evts.size() == 0) this->At(0);
+  if (this->evts.size() == 0) this->At(Time{0});
   // from a new Schedule into a ScheduleRefBox,
   // then create a SCB for nested-schedule 
   // and call the callback with the SCB
-  Schedule nest_sdl;
+  auto nest_sdl = Schedule{{},{},this->srb.value,{}};
   //auto scb = ScheduleRefBox{temp}.SCB(evt_last); // TODO better calling with evt_last?
   auto scb = ScheduleRefBox{nest_sdl}.SCB({});
   cb(scb);
   // nested-schedule into this 
   return this->Do(nest_sdl);
+}
+ScheduleControllBlock 
+ScheduleControllBlock::Cat(const Schedule& sdl)
+{
+  this->srb.value.get() = this->srb.value.get().SimplyConcat(sdl);
+  return *this;
 }
 
 //////////////////////////////////////////////////
@@ -152,13 +160,23 @@ ScheduleControllBlock::Sdl(const std::function<void(ScheduleControllBlock&)>& cb
 //list<Task> Schedule::tbl;
 //list<Task> Schedule::sigtbl;
 
+Schedule Schedule::SimplyConcat(const Schedule& rhs) const {
+  Schedule ret = *this;
+  // concatinate Schedule::tbl
+  for (const auto& task : rhs.tbl) {
+    ret.tbl.push_back(task);
+  }
+  for (const auto& sigtask : rhs.sigtbl) {
+    ret.sigtbl.push_back(sigtask);
+  }
+  return ret;
+}
 // no overwrite sigtbl when this has already sigtbl's signal.
-Schedule Schedule::ConcatSigtable(const Schedule& rhs) const {
+Schedule Schedule::SetSuperSigtbl(const Schedule& rhs) const {
   Schedule ret = *this;
   for (const auto& sigtask : rhs.sigtbl) {
     // continue if it has already
-    if (this-> sigtbl.end() 
-        != // find condition
+    if (this-> sigtbl.end() !=
         std::find_if(RANGE(this->sigtbl),
           [&sigtask](auto task){ return task.evt == sigtask.evt; }
         ))

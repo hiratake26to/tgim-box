@@ -114,6 +114,9 @@ public:
   ScheduleControllBlock At(EventSpecifer es) {
     return ScheduleRefBox{this->schedule_}.SCB({}).At(es);
   }
+  ScheduleControllBlock Cat(const Schedule& sdl) {
+    return ScheduleRefBox{this->schedule_}.SCB({}).Cat(sdl);
+  }
 
   // find tasks that have the event`evt` as a action.
   // T: parent task.aciton type
@@ -240,10 +243,10 @@ private:
         ret.insert(ret.end(), RANGE(result));
         continue;
       }
-      // task is Schedule
+      // task in the schedule
       if (auto&& ptr = std::get_if<ScheduleRef>(&task.action)) {
         const Schedule& nested_sdl = ptr->get();
-        const auto& temp = nested_sdl.ConcatSigtable(sdl);
+        const auto& temp = nested_sdl.SetSuperSigtbl(sdl);
 
         //cout << "[DEBUG] Resolve nested schedule for " << task.ToString() << endl;
         //cout << "[nested_sdl]" << endl;

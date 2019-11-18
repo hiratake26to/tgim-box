@@ -35,9 +35,12 @@ using json = nlohmann::json;
 struct Schedule {
   list<Task> tbl;
   list<Task> sigtbl;
+  /// optional parent schedule as reference
+  optional<ScheduleRef> parent;
   list<Schedule> children;
 
-  Schedule ConcatSigtable(const Schedule& rhs) const; 
+  Schedule SimplyConcat(const Schedule& rhs) const;
+  Schedule SetSuperSigtbl(const Schedule& rhs) const; 
   string ToString(int l=0) const; 
   bool operator==(const Schedule& rhs) const; 
   bool operator!=(const Schedule& rhs) const; 
