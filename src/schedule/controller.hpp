@@ -30,7 +30,7 @@ struct ScheduleControllBlock;
 //       isn't Network Box.
 struct ScheduleRefBox {
   /// reference to the instance of Schedule
-  const ScheduleRef value;
+  ScheduleRef value;
 
   ///
   // CreateSCB: is utility function.
@@ -44,12 +44,12 @@ struct ScheduleRefBox {
   // AddTask: add a task by set of one event and one action.
   // return SCB of nested-schedule, if the action added is schedule.
   // Event -> Action -> Optional SCB
-  optional<ScheduleControllBlock> AddTask(Event evt, Action action);
+  optional<ScheduleRefBox> AddTask(Event evt, Action action);
   ///
   // AddTask: add tasks by set of multi event and one action.
   // return SCBs of nested-schedules by the action.
   // [Event] -> Action -> [SCB]
-  vector<ScheduleControllBlock> AddTask(EventSpecifer es, Action action);
+  optional<vector<ScheduleRefBox>> AddTask(vector<Event> evts, Action action);
   ///
   // GetSchedule: return a schedule that is a copy self reference.
   Schedule GetSchedule() const;
@@ -60,9 +60,9 @@ struct ScheduleRefBox {
 // SCB provide functions to controll the schedule
 struct ScheduleControllBlock {
   /// reference to the instance of schedule table
-  ScheduleRefBox srb; 
+  vector<ScheduleRefBox> srbs; // TODO
   /// last pushed event
-  optional<Event> evt_last;
+  //optional<Event> evt_last;
   /// accumulate OR events
   vector<Event> evts;
 
@@ -89,5 +89,5 @@ struct ScheduleControllBlock {
   ScheduleControllBlock Sdl(const std::function<void(ScheduleControllBlock&)>& cb); 
   ///
   // concatinate the shcedule to this
-  ScheduleControllBlock Cat(const Schedule& sdl);
+  ScheduleControllBlock Sdl(const Schedule& sdl);
 };

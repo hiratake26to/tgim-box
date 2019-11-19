@@ -238,38 +238,28 @@ void nic_switch_test() {
   // global signal: SimStart
   Box global("_global", "GlobalSig"); // exclusive box for signal
   global
-    .At(Time{5})
-    .Do(Sig{"SimStart"})
+    .At(Time{5}).Do(Sig{"SimStart"})
     ;
   // sinker
   s0
-    .Cat(global.GetSchedule())
-    .At(Sig{"SimStart"})
-    .Do(Sig{"Start"})
+    .Sdl(global.GetSchedule())
+    .At(Sig{"SimStart"}).Do(Sig{"Start"})
     ;
   // route switch
   rs
-    .Cat(global.GetSchedule())
-    .At(Sig{"SwitchPort0"})
-    .Do("ADD_PRE_0", {})
-    //.At(Sig{"dummy"})
+    .Sdl(global.GetSchedule())
+    .At(Sig{"SwitchPort0"}).Do("ADD_PRE_0", {})
     .At(Sig{"SimStart"})
-    .Sdl([](auto&&rs){rs
-    //.Aft()
+    .Aft()
       .At(Sig{"SwitchPort1"}).Do("OVERRIDE_PRE_1", {})
-      .At(Range<Time>{10,30,10}) // expanded to [10, 20]
-      .Sdl([](auto&&rs){rs
-      //.Aft()
+      .At(Range<Time>{10,111,100})
+      .Aft()
         .At(Time{0}).Do(Sig{"SwitchPort0"})
         .At(Time{5}).Do(Sig{"SwitchPort1"})
-        ;
-      })
-      //.EndAft()
+      .EndAft()
       .At(Sig{"Timeout"})
       .Do(Sig{"Stop"})
-      ;
-    })
-    //.EndAft();
+    .EndAft();
     ;
 
   // DEBUG

@@ -114,8 +114,8 @@ public:
   ScheduleControllBlock At(EventSpecifer es) {
     return ScheduleRefBox{this->schedule_}.SCB({}).At(es);
   }
-  ScheduleControllBlock Cat(const Schedule& sdl) {
-    return ScheduleRefBox{this->schedule_}.SCB({}).Cat(sdl);
+  ScheduleControllBlock Sdl(const Schedule& sdl) {
+    return ScheduleRefBox{this->schedule_}.SCB({}).Sdl(sdl);
   }
 
   // find tasks that have the event`evt` as a action.
