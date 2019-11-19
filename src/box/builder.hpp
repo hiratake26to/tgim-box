@@ -215,21 +215,20 @@ public:
       for (const auto& task : box.FlattenSchedule()) {
         cout << "[DEBUG] " << task.ToString() << endl;
         string task_name = box.GetName() + "_T" + std::to_string(task_i);
-        j[task_name] = GenAppBody(task);
+        j[task_name] = GenAppBody(box, task);
         ++task_i;
       }
     }
 
     return j;
   }
-  json GenAppBody(const Task& task) {
+  json GenAppBody(const Box& box, const Task& task) {
     json j;
     try {
       const auto& action = std::get<PrimitiveAction>(task.action);
       j["type"] = action.type;
       j["args"] = action.param;
-    }
-    catch (const std::bad_variant_access&) {
+    } catch (const std::bad_variant_access&) {
       std::stringstream ss;
       ss << "exception: task.action is not type of PrimitiveAction!\n";
       std::visit([&ss](auto&& arg) {
@@ -238,6 +237,18 @@ public:
           }, task.action);
       throw std::logic_error(ss.str());
     }
+
+    j["install"] = box.FindNodeFromType("Main").value().get().name;
+
+    j["nodes"] = {};
+    for (const auto& node: box.nodes) {
+      j["nodes"] += node.name;
+    }
+    j["channels"] = {};
+    for (const auto& ch: box.channels) {
+      j["channels"] += ch.name;
+    }
+
     if (auto&& v = std::get_if<Time>(&task.evt.value())) {
       const Time& time = *v;
       j["args"]["start"] = time.value;

@@ -411,6 +411,12 @@ public:
     return {};
   }
 
+  optional<std::reference_wrapper<Node>> FindNodeFromType(string type) const {
+    for (Node& i : nodes) {
+      if (i.type == type) return i;
+    }
+    return {};
+  }
   optional<std::reference_wrapper<Node>> FindNode(string name) const {
     for (Node& i : nodes) {
       if (i.name == name) return i;

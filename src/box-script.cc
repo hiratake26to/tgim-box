@@ -97,12 +97,12 @@ void signal_test() {
     })
     .At(Sig{"hello"}).Do("Honma",{}) // 11*
     .At(Sig{"world"}).Do("Himawari",{}) // 12*
-      .At(Sig{"world"}).Aft() // 12
+    .At(Sig{"world"}).Aft() // 12
       .At(1).Do("🌻",{}) // 13*
       .At(0).Do("🌻",{}) // 12*
-        .At(2).Aft().Do("📕",{}) // 14*
-          .At(1).Do("(・ヮ・🌻)",{}) // 15*
-          .At(3).Aft().Do("📕",{}) // 17*
+      .At(2).Aft().Do("📕",{}) // 14*
+        .At(1).Do("(・ヮ・🌻)",{}) // 15*
+        .At(3).Aft().Do("📕",{}) // 17*
     ;
   //cout << sender.DumpSchedule() << endl;
   for (const auto& i : sender.FlattenSchedule()) {
@@ -174,19 +174,19 @@ void nic_switch_test() {
 
   // TODO implement ANY-channel
   // create node and channel over the box.
-  RouteSwitch.CreateNode("n0", "Node");
+  RouteSwitch.CreateNode("n0", "Main"); // TODO node type
   RouteSwitch.CreateChannel("c0", "ANY");
   RouteSwitch.CreateChannel("c1", "ANY");
   RouteSwitch.TriConnect("n0", "c0", "p0");
   RouteSwitch.TriConnect("n0", "c1", "p1");
 
-  Router.CreateNode("n0", "Node");
+  Router.CreateNode("n0", "Main");
   Router.CreateChannel("c0", "Csma");
   Router.CreateChannel("c1", "Csma");
   Router.TriConnect("n0", "c0", "p0");
   Router.TriConnect("n0", "c1", "p1");
 
-  Sinker.CreateNode("n0", "Node");
+  Sinker.CreateNode("n0", "Main");
   Sinker.CreateChannel("c0", "ANY");
   Sinker.CreateChannel("c1", "ANY");
   Sinker.TriConnect("n0", "c0", "p0");
