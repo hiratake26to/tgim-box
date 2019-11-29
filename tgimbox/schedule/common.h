@@ -9,6 +9,8 @@
 #include <variant>
 #include <nlohmann/json.hpp>
 
+namespace tgim {
+
 using std::optional;
 using std::string;
 using std::vector;
@@ -18,17 +20,4 @@ using std::map;
 using std::any;
 using json = nlohmann::json;
 
-#include "event.hpp"
-#include "action.hpp"
-
-///
-// Task
-//
-struct Task {
-  Event evt;
-  Action action;
-
-  string ToString(int l=0) const;
-  bool operator==(const Task& rhs) const; 
-  bool operator!=(const Task& rhs) const; 
-};
+}

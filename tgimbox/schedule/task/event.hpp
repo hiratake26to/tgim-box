@@ -11,6 +11,8 @@
 
 #include "signal.hpp"
 
+namespace tgim {
+
 using std::optional;
 using std::string;
 using std::vector;
@@ -91,3 +93,5 @@ public:
   }
   vector<Event> value() const; 
 };
+
+}

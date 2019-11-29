@@ -1,4 +1,7 @@
 #include "common.hpp"
+#include "../schedule/schedule.hpp"
+
+namespace tgim {
 
 //////////////////////////////////////////////////
 // PrimitiveAction (ActionType, AppType)
@@ -54,3 +57,5 @@ bool PrimitiveAction::operator<(const PrimitiveAction& rhs) const {
 bool PrimitiveAction::operator> (const PrimitiveAction& rhs) const { return rhs < *this; }
 bool PrimitiveAction::operator<=(const PrimitiveAction& rhs) const { return !(*this > rhs); }
 bool PrimitiveAction::operator>=(const PrimitiveAction& rhs) const { return !(*this < rhs); }
+
+}

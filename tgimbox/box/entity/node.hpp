@@ -1,3 +1,7 @@
+#pragma once
+
+#include "macro.hpp"
+
 struct Node {
   string name;
   string type;

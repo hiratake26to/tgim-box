@@ -1,5 +1,7 @@
 #include "common.hpp"
-#include "../schedule/task/action.hpp"
+#include "../schedule/schedule.hpp"
+
+namespace tgim {
 
 // Task is move-only and use only via reference.
 string Task::ToString(int l) const {
@@ -19,3 +21,5 @@ bool Task::operator==(const Task& rhs) const {
       );
 }
 bool Task::operator!=(const Task& rhs) const { return !(*this == rhs); }
+
+}

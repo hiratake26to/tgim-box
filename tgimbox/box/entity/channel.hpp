@@ -1,3 +1,5 @@
+#pragma once
+
 struct Channel {
   string name;
   string type;

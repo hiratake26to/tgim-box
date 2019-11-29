@@ -1,3 +1,5 @@
+#pragma once
+
 struct Port2 {
   string name;
   string from_channel; // name reference

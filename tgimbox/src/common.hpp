@@ -27,8 +27,6 @@ using std::any;
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
-#include "../schedule/schedule.hpp"
-
 #define RANGE(v) v.begin(), v.end()
 #define UNIQUE(v) {\
   std::sort(RANGE(v));\

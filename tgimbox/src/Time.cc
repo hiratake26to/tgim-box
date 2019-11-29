@@ -1,4 +1,8 @@
 #include "common.hpp"
+#include "../schedule/schedule.hpp"
+
+namespace tgim {
+
 // associated event
 // premitive event
 // - Time
@@ -27,3 +31,5 @@ bool Time::operator==(const Time& rhs) const {
   return value == rhs.value;
 }
 bool Time::operator!=(const Time& rhs) const { return !(*this == rhs); }
+
+}

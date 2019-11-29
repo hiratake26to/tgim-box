@@ -5,7 +5,7 @@ CXXFLAGS=-g3 -std=c++2a $(INCLUDE)
 INCLUDE=-I./include
 SOURCES=$(wildcard ./src/src/*.cc)
 PROGRAM=box-script
-OBJS=src/$(PROGRAM).o $(SOURCES:.cc=.o)
+OBJS=box-script/$(PROGRAM).o $(SOURCES:.cc=.o)
 
 $(PROGRAM): $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^

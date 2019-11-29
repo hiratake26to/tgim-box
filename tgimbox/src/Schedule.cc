@@ -1,4 +1,7 @@
 #include "common.hpp"
+#include "../schedule/schedule.hpp"
+
+namespace tgim {
 
 //////////////////////////////////////////////////
 // ScheduleRefBox
@@ -209,3 +212,5 @@ bool Schedule::operator==(const Schedule& rhs) const {
   return (this->tbl == rhs.tbl and this->sigtbl == rhs.sigtbl);
 }
 bool Schedule::operator!=(const Schedule& rhs) const { return !(*this==rhs); }
+
+}

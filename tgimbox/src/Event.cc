@@ -1,4 +1,7 @@
 #include "common.hpp"
+#include "../schedule/schedule.hpp"
+
+namespace tgim {
 
 //////////////////////////////////////////////////
 // Event
@@ -65,3 +68,4 @@ vector<Event> EventSpecifer::value() const {
   return v_;
 }
 
+}

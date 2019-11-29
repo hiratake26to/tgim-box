@@ -10,7 +10,9 @@
 #include <nlohmann/json.hpp>
 
 #include "signal.hpp"
-#include "../schedule.hpp"
+#include "scheduleref.hpp"
+
+namespace tgim {
 
 using std::optional;
 using std::string;
@@ -46,3 +48,4 @@ struct PrimitiveAction {
   bool operator>=(const PrimitiveAction& rhs) const; 
 };
 
+}
