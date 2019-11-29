@@ -10,9 +10,7 @@
 #include <map>
 #include <typeinfo>
 #include <boost/core/demangle.hpp>
-#include "ExceptionDecolater.hpp"
-#include "schedule/schedule.hpp"
-#include "box/box.hpp"
+#include <tgimbox/tgimbox.hpp>
 
 #include <any>
 #include <optional> 
@@ -38,6 +36,8 @@ using json = nlohmann::json;
 #include <pybind11/stl.h>
 #include <pybind11_json/pybind11_json.hpp>
 namespace py = pybind11;
+
+using namespace tgim;
 
 PYBIND11_MODULE(tgimboxcore, m) {
   ///
