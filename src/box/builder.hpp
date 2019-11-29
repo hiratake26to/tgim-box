@@ -2,15 +2,25 @@ class NsomBuilder {
 private:
   vector<Box> boxs_;
   string name_;
+  optional<Box> global_sdl_;
 
 public:
   NsomBuilder(string name)
-  : name_(name)
-  {}
+  : name_(name) {}
 
   void AddBox(const Box& box) {
     boxs_.push_back(box);
-  };
+  }
+
+  void AddBox(const vector<Box>& boxs) {
+    for (auto&& i : boxs) {
+      boxs_.push_back(i);
+    }
+  }
+
+  void SetGlobalSdl(const Box& box) {
+    global_sdl_ = box;
+  }
 
   // build ns-3 code
   string Build() {
@@ -18,9 +28,13 @@ public:
     for (auto&& b : boxs) {
       // name mangling to avoid NSOM item's name conflict.
       b.Mangle();
+      // set global schedule
+      if (global_sdl_) {
+        b.Sdl(global_sdl_.value().GetSchedule());
+      }
 
-      cout << "[DEBUG] " << b.ToString(100) << endl;
-      cout << "[DEBUG] " << b.DumpSchedule() << endl;
+      //cout << "[DEBUG] " << b.ToString(100) << endl;
+      //cout << "[DEBUG] " << b.DumpSchedule() << endl;
     }
 
     // TODO marge channel preprocess
@@ -213,7 +227,7 @@ public:
     for (const auto& box : boxs) {
       int task_i = 0;
       for (const auto& task : box.FlattenSchedule()) {
-        cout << "[DEBUG] " << task.ToString() << endl;
+        //cout << "[DEBUG] " << task.ToString() << endl;
         string task_name = box.GetName() + "_T" + std::to_string(task_i);
         j[task_name] = GenAppBody(box, task);
         ++task_i;

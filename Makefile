@@ -7,13 +7,24 @@ SOURCES=$(wildcard ./src/src/*.cc)
 PROGRAM=box-script
 OBJS=box-script/$(PROGRAM).o $(SOURCES:.cc=.o)
 
-$(PROGRAM): $(OBJS)
-	$(CXX) $(CXXFLAGS) -o $@ $^
+# use normal `make` command
+#$(PROGRAM): $(OBJS)
+#	$(CXX) $(CXXFLAGS) -o $@ $^
 
-.PHONY: clean
+# use cmake
+all: CMakeLists.txt build
+	cd build && cmake .. && make
+
+build:
+	mkdir build
+
+.PHONY: clean debug
 
 debug:
-	echo $(OBJS)
-
+	./build/box-script
+# use make
+#clean:
+#	rm -fr $(OBJS) $(PROGRAM)
+# use cmake
 clean:
-	rm -fr $(OBJS) $(PROGRAM)
+	rm -fr build

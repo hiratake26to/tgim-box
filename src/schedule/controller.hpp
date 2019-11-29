@@ -60,7 +60,7 @@ struct ScheduleRefBox {
 // SCB provide functions to controll the schedule
 struct ScheduleControllBlock {
   /// reference to the instance of schedule table
-  vector<ScheduleRefBox> srbs; // TODO
+  vector<ScheduleRefBox> srbs;
   /// last pushed event
   //optional<Event> evt_last;
   /// accumulate OR events

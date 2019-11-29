@@ -1,6 +1,7 @@
 #include <iostream>
 #include <optional>
 #include <sstream>
+#include <fstream>
 #include <string>
 #include <list>
 #include <vector>
@@ -199,17 +200,14 @@ void nic_switch_test() {
   // preparate application(schedule)
   RouteSwitch
     .At(Sig{"SwitchPort0"})
-    .Sdl([](auto&&a){a
-      .At(Time{0}).Do("NicCtl", {{"idx", "1"},{"enable", "0"}})
-      .At(Time{0}).Do("NicCtl", {{"idx", "0"},{"enable", "1"}})
-      //.At(Time{0}).Do("PRE_0", {})
-      ;
-    })
-    //.At(Sig{"SwitchPort1"}).Do("PRE_1", {})
+    .Aft()
+      .At(Time{0}).Do("NicCtl", {{"idx", 1},{"enable", false}})
+      .At(Time{0}).Do("NicCtl", {{"idx", 0},{"enable", true}})
+    .EndAft()
     .At(Sig{"SwitchPort1"})
-    .Do("NicCtl", {{"idx", "0"},{"enable", "0"}})
+    .Do("NicCtl", {{"idx", 0},{"enable", false}})
     .At(Sig{"SwitchPort1"})
-    .Do("NicCtl", {{"idx", "1"},{"enable", "1"}})
+    .Do("NicCtl", {{"idx", 1},{"enable", true}})
     ;
 
   // topology
@@ -227,6 +225,11 @@ void nic_switch_test() {
   Box r0 = Router.Fork("r0");
   Box r1 = Router.Fork("r1");
   Box s0 = Sinker.Fork("s0");
+
+  rs.SetPoint({0,0});
+  r0.SetPoint({20,0});
+  r1.SetPoint({20,10});
+  s0.SetPoint({40,0});
 
   rs.ConnectPort("p0", r0, "p0");
   rs.ConnectPort("p1", r1, "p0");
@@ -272,6 +275,11 @@ void nic_switch_test() {
   builder.AddBox(r0);
   builder.AddBox(r1);
   builder.AddBox(s0);
+
+  {
+    std::ofstream ostrm("dump.json");
+    ostrm << builder.Build() << endl;
+  }
   cout << builder.Build() << endl;
 }
 

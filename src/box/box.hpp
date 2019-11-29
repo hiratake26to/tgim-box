@@ -117,6 +117,9 @@ public:
   ScheduleControllBlock Sdl(const Schedule& sdl) {
     return ScheduleRefBox{this->schedule_}.SCB({}).Sdl(sdl);
   }
+  ScheduleControllBlock Sdl2() {
+    return ScheduleRefBox{this->schedule_}.SCB({});
+  }
 
   // find tasks that have the event`evt` as a action.
   // T: parent task.aciton type
