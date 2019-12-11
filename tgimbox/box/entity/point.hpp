@@ -1,9 +1,9 @@
 #pragma once
 
 struct Point {
-  int x;
-  int y;
-  optional<int> z;
+  double x;
+  double y;
+  optional<double> z;
 
   Point operator +(const Point& rhs) const {
     Point ret{

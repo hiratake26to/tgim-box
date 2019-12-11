@@ -12,19 +12,34 @@ OBJS=box-script/$(PROGRAM).o $(SOURCES:.cc=.o)
 #	$(CXX) $(CXXFLAGS) -o $@ $^
 
 # use cmake
-all: CMakeLists.txt build
-	cd build && cmake .. && make
+all: ccapi pybind
+
+# C++ API
+ccapi: CMakeLists.txt build
+	cd build && cmake .. && $(MAKE)
+	@echo "[ccapi] Build for C++ API Success!"
 
 build:
 	mkdir build
 
+# Python binding
+pybind: FORCE
+	cd $@ && $(MAKE)
+	@echo "[pybind] Build for Python binding Success!"
+
+FORCE:
+
 .PHONY: clean debug
 
-debug:
+debug: all
 	./build/box-script
+
+lldb: all
+	lldb ./build/box-script
 # use make
 #clean:
 #	rm -fr $(OBJS) $(PROGRAM)
 # use cmake
 clean:
 	rm -fr build
+	cd pybind && make clean

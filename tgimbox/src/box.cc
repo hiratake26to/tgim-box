@@ -248,8 +248,13 @@ optional<string> Box::ResolveConn(string channel_name) const {
 vector<Netif> Box::GenNodeConnList(const Node& node) const {
   vector<Netif> node_conn_list = node.GenConnList();
   // connection list of node-to-channel resolve to node-to-merged-channel
+  cout << "[box] " << this->name_
+    << " GenNodeConnList: " << node.ToString() << endl;
   for (auto&& netif : node_conn_list) {
+    cout << "      netif.connect = " << netif.connect;
+    // what channel does this node connect to?
     netif.connect = this->ResolveConn(netif.connect).value_or(netif.connect);
+    cout << "\tmChannel = " << netif.connect << endl;
   }
   return node_conn_list;
 }
@@ -297,7 +302,11 @@ void Box::Mangle() {
   for (auto&& ch : this->channels) {
     // channel name mangle
     ch.name = this->name_ + PrefixChannel(ch.name);
-    ch.port = (ch.port ? PrefixPort(ch.port.value()) : nullptr);
+    if (ch.port) {
+      ch.port = PrefixPort(ch.port.value());
+    } else {
+      ch.port.reset();
+    }
   }
   // port name mangling
   for (auto&& port : this->ports) {
@@ -374,14 +383,15 @@ optional<std::reference_wrapper<Port2>> Box::FindPort2(string name) const {
 }
 
 optional<string> Box::CheckInvalidChannel(const Channel& from_channel, const Channel& to_channel) {
+  throw std::logic_error("this method called is invalid");
   // 1対1接続であることを確認
-  if (from_channel.port || to_channel.port) {
-    std::stringstream ss;
-    if (from_channel.port) ss << "from channel: " << from_channel.name << " is used." << endl;
-    if (to_channel.port) ss << "to channel: " << to_channel.name << " is used." << endl;
-    return ss.str();
-  }
-  return {};
+  //if (from_channel.port || to_channel.port) {
+  //  std::stringstream ss;
+  //  if (from_channel.port) ss << "from channel: " << from_channel.name << " is used." << endl;
+  //  if (to_channel.port) ss << "to channel: " << to_channel.name << " is used." << endl;
+  //  return ss.str();
+  //}
+  //return {};
 }
 
 /* attempt to automatically construct port, what happens?
@@ -405,6 +415,11 @@ Port2& Box::CreatePort(const string& from_this_channel_name, const string& port_
       Port2{port_name, from_this_channel_name, "", "", 0, 0});
 
   from_channel.port = port_name;
+  cout << "[box] " << this->name_
+    << " CreatePort"
+    << ", from_channel = " << from_channel.ToString()
+    << ", port = " << port_name
+    << endl;
 
   return FindPort2(port_name).value();
 }

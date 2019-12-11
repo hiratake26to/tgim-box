@@ -26,8 +26,13 @@ target_link_libraries(tgimboxcore
   PUBLIC tgimbox
   PRIVATE pybind11::module
   )
-set_target_properties(tgimboxcore PROPERTIES PREFIX "${PYTHON_MODULE_PREFIX}"
-                                         SUFFIX "${PYTHON_MODULE_EXTENSION}")
+set_target_properties(tgimboxcore 
+  PROPERTIES PREFIX "${PYTHON_MODULE_PREFIX}"
+  SUFFIX "${PYTHON_MODULE_EXTENSION}"
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+  )
+
+configure_file(tgimbox.py ${CMAKE_BINARY_DIR}/lib/tgimbox.py COPYONLY)
 
 #pybind11_add_module(tgimbox MODULE tgimbox-bind.cc)
 #set_property(TARGET tgimbox-lib PROPERTY CXX_STANDARD 17)

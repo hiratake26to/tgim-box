@@ -1,4 +1,8 @@
-from tgimboxcore import *
+from tgimboxcore import Box, Point, Sig, NsomBuilder
+
+"""
+The standard box definition in this module.
+"""
 
 ## Standard The Box
 # Basic
@@ -46,18 +50,18 @@ def GenSwitch(port_num):
 BasicRouteSwitch = BasicBox.Fork("route_switch", "RouteSwitch")
 BasicRouteSwitch.CreateChannel("c0", "ANY")
 BasicRouteSwitch.CreateChannel("c1", "ANY")
-BasicRouteSwitch.TriConnect([], "n0", "c0", "p0");
-BasicRouteSwitch.TriConnect([], "n0", "c1", "p1");
+BasicRouteSwitch.TriConnect([], "n0", "c0", "port0")
+BasicRouteSwitch.TriConnect([], "n0", "c1", "port1")
 (BasicRouteSwitch.Sdl()
   .At(Sig("SwitchPort0"))
   .Aft()
     .At(0).Do("NicCtl", {"idx": 1, "enable": False})
-    .At(0).Do("NicCtl", {"idx": 0, "enable": True})
+    .At(1).Do("NicCtl", {"idx": 0, "enable": True})
   .EndAft()
   .At(Sig("SwitchPort1"))
   .Aft()
     .At(0).Do("NicCtl", {"idx": 0, "enable": False})
-    .At(0).Do("NicCtl", {"idx": 1, "enable": True})
+    .At(1).Do("NicCtl", {"idx": 1, "enable": True})
   .EndAft()
   )
 
@@ -69,6 +73,16 @@ GlobalSchedule = Global.Sdl()
     )
 
 ## Standard Builder
-Builder = NsomBuilder("network") # "network" is the network name
-Builder.SetGlobalSdl(Global)
+class BuildBox:
+  """
+  BuildBox is the Box to convert and build into NSOM format file.
+  """
+  def __init__(self, boxs, net_name="network"):
+    self.builder = NsomBuilder(net_name) # "network" is the network name
+    self.builder.SetGlobalSdl(Global)
+    self.builder.AddBox(boxs)
+
+  def Build(self):
+    with open('tgim-main.json', 'w') as f:
+      f.write(self.builder.Build())
 

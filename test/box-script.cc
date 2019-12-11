@@ -284,12 +284,29 @@ void nic_switch_test() {
   cout << builder.Build() << endl;
 }
 
+void channel_only_test() {
+  // create base box
+  Box a("ch_only", "Box");
+  //a.CreateNode("n","Node");
+  a.CreateChannel("c","Node");
+
+  NsomBuilder builder("TestNet");
+  builder.AddBox(a);
+
+  {
+    std::ofstream ostrm("dump.json");
+    ostrm << builder.Build() << endl;
+  }
+  cout << builder.Build() << endl;
+}
+
 void test() {
   // logic_error: library responsibility
   // runtime_error: user responsibility
   try{
     //signal_test();
-    nic_switch_test();
+    //nic_switch_test();
+    channel_only_test();
   }catch(const std::exception& e) {
     std::cerr
       //<< e.what()

@@ -47,8 +47,8 @@ PYBIND11_MODULE(tgimboxcore, m) {
   ///
   // Point Class
   py::class_<Point>(m, "Point")
-    .def(py::init<int,int>())
-    .def(py::init<int,int,int>())
+    .def(py::init<double,double>())
+    .def(py::init<double,double,double>())
     .def_readonly("x", &Point::x)
     .def_readonly("y", &Point::y)
     .def_readonly("z", &Point::z)
@@ -56,7 +56,6 @@ PYBIND11_MODULE(tgimboxcore, m) {
 
   ///
   // Sig
-  
   py::class_<Sig>(m, "Sig")
     .def("__str__", [](Schedule& a) { return a.ToString(); })
     .def(py::init<string>())
@@ -109,6 +108,13 @@ PYBIND11_MODULE(tgimboxcore, m) {
     ;
 
   ///
+  // Port
+  py::class_<Port2>(m, "Port2")
+    .def("__str__", [](Port2& a) { return a.ToString(); })
+    .def("ToString", &Port2::ToString, py::arg("level") = 0)
+    ;
+
+  ///
   // Box Class
   py::class_<Box>(m, "Box")
     .def(py::init<string,string>())
@@ -116,6 +122,7 @@ PYBIND11_MODULE(tgimboxcore, m) {
     .def("ToString", &Box::ToString, py::arg("level") = 0)
     .def("CreateNode",    &Box::CreateNode)
     .def("CreateChannel", &Box::CreateChannel)
+    .def("CreatePort", &Box::CreatePort)
     .def("ConnectPort", &Box::ConnectPort)
     .def("TriConnect", (void(Box::*)(vector<string>,string,string,string))&Box::TriConnect,
         py::arg("roles"), py::arg("node"), py::arg("channel"), py::arg("port"))
@@ -131,6 +138,8 @@ PYBIND11_MODULE(tgimboxcore, m) {
     .def("Fork", (Box(Box::*)(string)const)&Box::Fork,
         py::arg("name"))
     .def("Sdl", &Box::Sdl2)
+    // for python, method to enhanced usability
+    .def("Set", [](Box& a, Point pt){return a.SetPoint(pt);})
     ;
 
   ///
