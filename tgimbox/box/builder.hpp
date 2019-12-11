@@ -102,27 +102,27 @@ public:
     ss << child_box_port.name;
 
     MergedChannel ret = {
-      .channels = {from_channel.name, to_channel.name},
-      .value = {ss.str(), ""}
+      .channels = {from_channel.name, to_channel.name}
+      //.value
     };
 
-    // TODO merge
+    // select merged channel
     //cout << "[DEBUG] parent_box " << parent_box.ToString(1) << endl;
     //cout << "[DEBUG] child_box " << child_box.ToString(1) << endl;
     BoxPriority bp_parent = ToBoxPriority(parent_box,parent_port);
     BoxPriority bp_child = ToBoxPriority(child_box,child_box_port);
-
     if (bp_parent < bp_child) {
-      ret.value.type = from_channel.type;
-      ret.value.config = from_channel.config;
-      return ret;
+      ret.value = from_channel;
     } else if (bp_parent > bp_child) {
-      ret.value.type = to_channel.type;
-      ret.value.config = to_channel.config;
-      return ret;
+      ret.value = to_channel;
+    } else {
+      throw std::logic_error("invalid port relation");
     }
 
-    throw std::logic_error("invalid port relation");
+    // overwrite name to merged channel name
+    ret.value.name = ss.str();
+
+    return ret;
   }
 
   void MergeChannel(vector<Box>& boxs) {
@@ -135,6 +135,7 @@ public:
         port.mchannel = mch;
         Port2& child_port = FindRelevantPort2(port, boxs).value();
         child_port.mchannel = mch;
+        cout << "[box] MerCh: " << mch.value.ToString(1) << endl;
       }
     }
 
@@ -206,7 +207,8 @@ public:
       for (const auto& ch : box.channels) {
         // set a node's name to a key,
         // the node's body create, and set
-        if (not ch.port) j[ch.name] = GenChannelBody(ch);
+        //if (not ch.port) j[ch.name] = GenChannelBody(ch);
+        if (0 == ch.ports.size()) j[ch.name] = GenChannelBody(ch);
       }
     }
 
@@ -216,6 +218,7 @@ public:
   json GenChannelBody(Channel channel) {
     json j;
     j["type"] = channel.type;
+    if (channel.tag) j["tag"] = channel.tag.value();
     //cout << "[DEBUG]" << channel.ToString(1) << endl;
     if (channel.config.is_object()) {
       j["config"] = channel.config;

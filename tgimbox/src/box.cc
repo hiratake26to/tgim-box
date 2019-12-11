@@ -233,12 +233,30 @@ void Box::ClearSchedule() {
 // 1. search channel from inner box
 // 2. channel resolve to merged-channel
 // 3. return merged-channl
-optional<string> Box::ResolveConn(string channel_name) const {
+//optional<string> Box::ResolveConn(string channel_name) const {
+//  try {
+//    Channel& ch = this->FindChannel(channel_name).value();
+//    Port2& port = this->FindPort2(ch.port.value()).value();
+//    MergedChannel mch = port.mchannel.value();
+//    return mch.value.name; // merged channel name
+//  } catch(const std::bad_optional_access& e) {
+//    return {};
+//  }
+//
+//}
+// support:
+//   single channel connect to multi port
+//   return multi port
+vector<string> Box::ResolveConn(string channel_name) const {
   try {
+    vector<string> ret;
     Channel& ch = this->FindChannel(channel_name).value();
-    Port2& port = this->FindPort2(ch.port.value()).value();
-    MergedChannel mch = port.mchannel.value();
-    return mch.value.name; // merged channel name
+    for (const auto& p : ch.ports) {
+      Port2& port = this->FindPort2(p).value();
+      MergedChannel mch = port.mchannel.value();
+      ret.push_back(mch.value.name); // merged channel name
+    }
+    return ret;
   } catch(const std::bad_optional_access& e) {
     return {};
   }
@@ -246,17 +264,23 @@ optional<string> Box::ResolveConn(string channel_name) const {
 }
 
 vector<Netif> Box::GenNodeConnList(const Node& node) const {
-  vector<Netif> node_conn_list = node.GenConnList();
+  const vector<Netif> node_conn_list = node.GenConnList();
+  vector<Netif> ret;
   // connection list of node-to-channel resolve to node-to-merged-channel
   cout << "[box] " << this->name_
     << " GenNodeConnList: " << node.ToString() << endl;
-  for (auto&& netif : node_conn_list) {
+  for (auto netif : node_conn_list) {
     cout << "      netif.connect = " << netif.connect;
-    // what channel does this node connect to?
-    netif.connect = this->ResolveConn(netif.connect).value_or(netif.connect);
-    cout << "\tmChannel = " << netif.connect << endl;
+    //netif.connect = this->ResolveConn(netif.connect).value_or(netif.connect);
+    for (const auto& mchannel_name 
+        : this->ResolveConn(netif.connect)) // what channel does this node connect to?
+    {
+      netif.connect = mchannel_name;
+      ret.push_back(netif);
+      cout << "\tmChannel = " << netif.connect << endl;
+    }
   }
-  return node_conn_list;
+  return ret;
 }
 
 string Box::PrefixBox(string name) const {
@@ -277,6 +301,11 @@ string Box::PrefixChannel(string name) const {
 string Box::PrefixPort(string name) const {
     std::stringstream ss;
     ss << "_P" << name;
+    return ss.str();
+}
+string Box::PrefixTag(string name) const {
+    std::stringstream ss;
+    ss << "_T" << name;
     return ss.str();
 }
 
@@ -302,10 +331,16 @@ void Box::Mangle() {
   for (auto&& ch : this->channels) {
     // channel name mangle
     ch.name = this->name_ + PrefixChannel(ch.name);
-    if (ch.port) {
-      ch.port = PrefixPort(ch.port.value());
-    } else {
-      ch.port.reset();
+    if (ch.tag) {
+      ch.tag = this->name_ + PrefixTag(ch.tag.value());
+    }
+    //if (ch.port) {
+    //  ch.port = PrefixPort(ch.port.value());
+    //} else {
+    //  ch.port.reset();
+    //}
+    for (auto&& p : ch.ports) {
+      p = PrefixPort(p);
     }
   }
   // port name mangling
@@ -414,7 +449,12 @@ Port2& Box::CreatePort(const string& from_this_channel_name, const string& port_
   ports.push_back(
       Port2{port_name, from_this_channel_name, "", "", 0, 0});
 
-  from_channel.port = port_name;
+  //from_channel.port = port_name;
+  from_channel.ports.push_back(port_name);
+  // omit tagging where a tagging only one channel.
+  if (from_channel.ports.size() > 1) {
+    from_channel.tag = from_this_channel_name;
+  }
   cout << "[box] " << this->name_
     << " CreatePort"
     << ", from_channel = " << from_channel.ToString()

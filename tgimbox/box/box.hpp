@@ -71,7 +71,8 @@ public:
   optional<std::reference_wrapper<Node>> FindNode(string name) const;
   optional<std::reference_wrapper<Port2>> FindPort2(string name) const;
 
-  optional<string> ResolveConn(string channel_name) const;
+  //optional<string> ResolveConn(string channel_name) const;
+  vector<string> ResolveConn(string channel_name) const;
 
   ScheduleControllBlock At(EventSpecifer es);
   ScheduleControllBlock Sdl2();
@@ -96,5 +97,6 @@ private:
   string PrefixNode(string name) const;
   string PrefixChannel(string name) const;
   string PrefixPort(string name) const;
+  string PrefixTag(string name) const;
 };
 }
