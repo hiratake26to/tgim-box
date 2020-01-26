@@ -48,10 +48,15 @@ public:
     MergeChannel(boxs);
 
     json j;
+    cout << "[builder] name generating..." << endl;
     j["name"]    = name_;
+    cout << "[builder] node generating..." << endl;
     j["node"]    = GenNodeList(boxs);
+    cout << "[builder] channel generating..." << endl;
     j["channel"] = GenChannelList(boxs);
+    cout << "[builder] subnet generating..." << endl;
     j["subnet"]  = GenSubnetList();
+    cout << "[builder] apps generating..." << endl;
     j["apps"]    = GenAppsList(boxs);
 
     cout << "[builder] build finish!" << endl;
@@ -248,6 +253,16 @@ public:
   }
   json GenAppBody(const Box& box, const Task& task) {
     json j;
+
+    if (auto main_box = box.FindNodeFromType("Main")) {
+      j["install"] = main_box.value().get().name;
+    } else {
+      std::stringstream ss;
+      ss << "exception: " << box.ToString() << " have no Main-type node!\n";
+      ss << "\tmake node has `Main` type in the box";
+      throw std::runtime_error(ss.str());
+    }
+
     try {
       const auto& action = std::get<PrimitiveAction>(task.action);
       j["type"] = action.type;
@@ -261,8 +276,6 @@ public:
           }, task.action);
       throw std::logic_error(ss.str());
     }
-
-    j["install"] = box.FindNodeFromType("Main").value().get().name;
 
     j["nodes"] = {};
     for (const auto& node: box.nodes) {

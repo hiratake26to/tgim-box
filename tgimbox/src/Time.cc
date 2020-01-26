@@ -8,7 +8,7 @@ namespace tgim {
 // - Time
 // - Sig
 
-Time::Time(int t): value(t) {}
+Time::Time(double t): value(t) {}
 string Time::ToString() const {
   std::stringstream ss;
   ss << "Time{" << value << "}";

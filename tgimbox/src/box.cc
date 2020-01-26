@@ -72,9 +72,50 @@ string Box::GetType() const {
   return this->type_;
 }
 
+vector<string> Box::GetPorts() const {
+  return std::accumulate(RANGE(this->ports), vector<string>{},
+      [](auto a, auto b){
+        a.push_back(b.name);
+        return a;
+      });
+}
+
 Point Box::GetPoint() const {
   return this->point_;
 }
+
+// This function return callback to get node name that it has a role-type
+// Must use after name mangling (at builder)
+string Box::AsHost() const {
+  if (auto node = this->FindNodeFromType("Main")) {
+    return (string{} + "${_B" + this->name_ + "_N" + node.value().get().name + "}");
+  }
+  throw std::runtime_error("exception: not find a node as a host\n"
+      "\tmake node of type `Main` in this box!");
+}
+
+/*
+int Box::PortNum(string name) const {
+  if (const Port2& res_port = this->FindPort2(name))
+  if (const auto& res_node  = this->FindNodeFromType("Main")) {
+    const Port2& port = res_port.value().get();
+    const Node& node  = res_node.value().get();
+    
+    vector<Netif> conn_list = this->GenNodeConnList(node);
+    int i = 1; // idx 0 is loop back, therefor netifs[0] is index of 1 in ns-3
+    for (const auto& conn : conn_list) {
+      // if node.netifs[i] == port.from_channel
+      // then `i` is index
+      conn.connect = port.from_channel
+      ++i;
+    }
+
+  } else {
+    throw std::runtime_error("exception: not find a node as a host\n"
+        "\tmake node of type `Main` in this box!");
+  }
+}
+*/
 
 Box Box::Fork(string name) const {
   Box ret = *this;
@@ -251,13 +292,21 @@ vector<string> Box::ResolveConn(string channel_name) const {
   try {
     vector<string> ret;
     Channel& ch = this->FindChannel(channel_name).value();
+    //cout << "  [debug] 1.ch " << ch.ToString() << endl;
     for (const auto& p : ch.ports) {
       Port2& port = this->FindPort2(p).value();
-      MergedChannel mch = port.mchannel.value();
-      ret.push_back(mch.value.name); // merged channel name
+      //cout << "  [debug] 2.port " << port.ToString() << endl;
+      try {
+        MergedChannel mch = port.mchannel.value();
+        //cout << "  [debug] 3.mch " << mch.ToString() << endl;
+        ret.push_back(mch.value.name); // merged channel name
+      } catch(const std::bad_optional_access& e) {
+        // ignore if no merged channel
+      }
     }
     return ret;
   } catch(const std::bad_optional_access& e) {
+    cout << "[box] warning: bad_optional_access" << endl;
     return {};
   }
 
@@ -267,17 +316,17 @@ vector<Netif> Box::GenNodeConnList(const Node& node) const {
   const vector<Netif> node_conn_list = node.GenConnList();
   vector<Netif> ret;
   // connection list of node-to-channel resolve to node-to-merged-channel
-  cout << "[box] " << this->name_
-    << " GenNodeConnList: " << node.ToString() << endl;
+  //cout << "[box] " << this->name_
+  //  << " GenNodeConnList: " << node.ToString() << endl;
   for (auto netif : node_conn_list) {
-    cout << "      netif.connect = " << netif.connect;
+    //cout << "      netif.connect = " << netif.connect;
     //netif.connect = this->ResolveConn(netif.connect).value_or(netif.connect);
     for (const auto& mchannel_name 
-        : this->ResolveConn(netif.connect)) // what channel does this node connect to?
+        : this->ResolveConn(netif.connect)) // what channel does this node connect to? [FIXME]
     {
       netif.connect = mchannel_name;
       ret.push_back(netif);
-      cout << "\tmChannel = " << netif.connect << endl;
+      //cout << "\tmChannel = " << netif.connect << endl;
     }
   }
   return ret;
@@ -455,11 +504,11 @@ Port2& Box::CreatePort(const string& from_this_channel_name, const string& port_
   if (from_channel.ports.size() > 1) {
     from_channel.tag = from_this_channel_name;
   }
-  cout << "[box] " << this->name_
-    << " CreatePort"
-    << ", from_channel = " << from_channel.ToString()
-    << ", port = " << port_name
-    << endl;
+  //cout << "[box] " << this->name_
+  //  << " CreatePort"
+  //  << ", from_channel = " << from_channel.ToString()
+  //  << ", port = " << port_name
+  //  << endl;
 
   return FindPort2(port_name).value();
 }

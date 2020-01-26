@@ -1,32 +1,39 @@
 from tgimbox import *
 
 ## create box
-t0 = BasicTerminal.Fork("t0")
-t1 = BasicTerminal.Fork("t1")
-s0 = GenSwitch(2).Fork("s0")
+term0 = BasicTerminal.Fork("term0")
+term1 = BasicTerminal.Fork("term1")
+sw = GenSwitch(2).Fork("sw")
 
 ## connect
-t0.ConnectPort("port", s0, "port0")
-t1.ConnectPort("port", s0, "port1")
+term0.ConnectPort("port", sw, "port0")
+term1.ConnectPort("port", sw, "port1")
 
 ## schedule
-(t0.Sdl()
+(term0.Sdl()
     .At(Sig("SimReady"))
-    .Do("Ping", {"dhost": "${_Bt1_Nn0}", "dport": 8080})
+    .Do("Ping", {"dhost": term1.AsHost(), "dport": 8080})
     )
 
-fromSimReady = t0.Sdl().At(Sig("SimReady")).Aft()
-for i in range(10,30,10):
-  fromSimReady.At(i).Do("Ping")
+for i in [term0, term1]: (i.Sdl()
+    .At(Sig("SimReady"))
+    .Do("Ping", {"dhost": term1.AsHost(), "dport": 8080})
+    )
 
-(t1.Sdl()
+fromSimReady = term0.Sdl().At(Sig("SimReady")).Aft()
+for i in range(10,30,10):
+    fromSimReady.At(i).Do("Ping")
+
+(term1.Sdl()
     .At(Sig("SimReady"))
     .Do("Sink", {"port": 8080})
     )
 
-## build
-Builder.AddBox([t0, t1, s0])
-result = Builder.Build()
-with open('out.json', 'w') as f:
-  f.write(Builder.Build())
+#TODO get box signature
+# - name
+# - type
 
+BasicTerminal
+
+## build
+#BuildBox([term0, term1, sw]).Build()

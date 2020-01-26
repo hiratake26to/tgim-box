@@ -52,7 +52,10 @@ public:
   Box& SetPoint(Point pt);
   string GetName() const;
   string GetType() const;
+  vector<string> GetPorts() const;
   Point GetPoint() const;
+  string AsHost() const;
+  //int PortNum(string) const;
   Box Fork(string name) const;
   Box Fork(string name, string type) const;
   Channel& CopyChannel(string src, string dst);

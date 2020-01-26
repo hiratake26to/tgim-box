@@ -47,8 +47,10 @@ PYBIND11_MODULE(tgimboxcore, m) {
   ///
   // Point Class
   py::class_<Point>(m, "Point")
-    .def(py::init<double,double>())
-    .def(py::init<double,double,double>())
+    .def(py::init<double,double>(),
+        py::arg("x"), py::arg("y"))
+    .def(py::init<double,double,double>(),
+        py::arg("x"), py::arg("y"), py::arg("z"))
     .def_readonly("x", &Point::x)
     .def_readonly("y", &Point::y)
     .def_readonly("z", &Point::z)
@@ -73,7 +75,7 @@ PYBIND11_MODULE(tgimboxcore, m) {
     .def("At", [](ScheduleControllBlock& a, Sig sig) {
         return a.At(sig);
         })
-    .def("At", [](ScheduleControllBlock& a, int time) {
+    .def("At", [](ScheduleControllBlock& a, double time) {
         return a.At(time);
         })
     .def("Aft", &ScheduleControllBlock::Aft)
@@ -105,6 +107,10 @@ PYBIND11_MODULE(tgimboxcore, m) {
   py::class_<Channel>(m, "Channel")
     .def("__str__", [](Channel& a) { return a.ToString(); })
     .def("ToString", &Channel::ToString, py::arg("level") = 0)
+    .def("SetConfig", [](Channel& a, py::object config) {
+        //cout << "[tgimboxcore] Channel::SetConfig, config=" << config << endl;
+        return a.SetConfig(config);
+        }, py::return_value_policy::reference)
     ;
 
   ///
@@ -120,18 +126,20 @@ PYBIND11_MODULE(tgimboxcore, m) {
     .def(py::init<string,string>())
     .def("__str__", [](Box& a) { return a.ToString(); })
     .def("ToString", &Box::ToString, py::arg("level") = 0)
-    .def("CreateNode",    &Box::CreateNode)
-    .def("CreateChannel", &Box::CreateChannel)
-    .def("CreatePort", &Box::CreatePort)
+    .def("CreateNode",    &Box::CreateNode, py::return_value_policy::reference)
+    .def("CreateChannel", &Box::CreateChannel, py::return_value_policy::reference)
+    .def("CreatePort", &Box::CreatePort, py::return_value_policy::reference)
     .def("ConnectPort", &Box::ConnectPort)
     .def("TriConnect", (void(Box::*)(vector<string>,string,string,string))&Box::TriConnect,
         py::arg("roles"), py::arg("node"), py::arg("channel"), py::arg("port"))
-    .def("SetName",  &Box::SetName)
-    .def("SetType",  &Box::SetType)
-    .def("SetPoint", &Box::SetPoint)
+    .def("SetName",  &Box::SetName, py::return_value_policy::reference)
+    .def("SetType",  &Box::SetType, py::return_value_policy::reference)
+    .def("SetPoint", &Box::SetPoint, py::return_value_policy::reference)
     .def("GetName",  &Box::GetName)
     .def("GetType",  &Box::GetType)
+    .def("GetPorts",  &Box::GetPorts)
     .def("GetPoint", &Box::GetPoint)
+    .def("AsHost", &Box::AsHost)
     .def("GetSchedule", &Box::GetSchedule)
     .def("Fork", (Box(Box::*)(string,string)const)&Box::Fork,
         py::arg("name"), py::arg("type"))
@@ -139,7 +147,7 @@ PYBIND11_MODULE(tgimboxcore, m) {
         py::arg("name"))
     .def("Sdl", &Box::Sdl2)
     // for python, method to enhanced usability
-    .def("Set", [](Box& a, Point pt){return a.SetPoint(pt);})
+    .def("Set", [](Box& a, Point pt){return a.SetPoint(pt);}, py::return_value_policy::reference)
     ;
 
   ///

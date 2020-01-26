@@ -1,0 +1,11 @@
+{
+  "apps": null,
+  "channel": {
+    "_Bch_only_Cc": {
+      "type": "Node"
+    }
+  },
+  "name": "TestNet",
+  "node": null,
+  "subnet": null
+}

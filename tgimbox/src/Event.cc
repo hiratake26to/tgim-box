@@ -58,7 +58,7 @@ EventSpecifer::EventSpecifer(Event evt) {
 EventSpecifer::EventSpecifer(Time time) {
   v_.push_back(Event{time});
 }
-EventSpecifer::EventSpecifer(int time) {
+EventSpecifer::EventSpecifer(double time) {
   v_.push_back(Event{Time{time}});
 }
 EventSpecifer::EventSpecifer(Sig id) {

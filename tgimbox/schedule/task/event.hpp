@@ -24,8 +24,8 @@ using json = nlohmann::json;
 
 // Time
 struct Time {
-  int value;
-  Time(int t);
+  double value;
+  Time(double t);
   Time& operator+=(const Time& rhs); 
   Time operator+(const Time& rhs) const; 
   bool operator<(const Time& rhs) const; 
@@ -80,7 +80,7 @@ public:
   EventSpecifer(); 
   EventSpecifer(Event evt); 
   EventSpecifer(Time time); 
-  EventSpecifer(int time); 
+  EventSpecifer(double time); 
   EventSpecifer(Sig id); 
   template<typename T> EventSpecifer(Range<T> range) {
     if (not (range.start <= range.stop)) throw std::logic_error(
