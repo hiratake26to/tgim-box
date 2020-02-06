@@ -8,11 +8,11 @@ build:
 
 run: all
 	cd build
-	PYTHONPATH=$${PYTHONPATH}:$$(pwd)/build python3 -i tgimbox.py
+	PYTHONPATH=$${PYTHONPATH}:$$(pwd)/build/lib python3 -i tgimbox.py
 
 debug: all
 	cd build
-	PYTHONPATH=$${PYTHONPATH}:$$(pwd)/build python3 -i debug.py
+	PYTHONPATH=$${PYTHONPATH}:$$(pwd)/build/lib python3 -i debug.py
 
 clean:
 	rm -fr build

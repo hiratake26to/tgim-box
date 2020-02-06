@@ -12,11 +12,11 @@ project(tgimbox-pybind)
 set(PYBIND11_CPP_STANDARD -std=c++17)
 #set(PYBIND11_CPP_STANDARD -std=c++2a)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../tgimbox ${CMAKE_CURRENT_BINARY_DIR}/tgimbox)
-add_subdirectory(pybind11-2.4.3)
+add_subdirectory(pybind11)
 #add_subdirectory(pybind11_json-0.2.2)
 
 ## lib
-include_directories(../include ./pybind11_json-0.2.2/include)
+include_directories(../include ./pybind11_json/include)
 file(GLOB_RECURSE src_files ../src/src/*.cc)
 #add_library(tgimboxcore MODULE ${src_files} tgimbox-bind.cc)
 add_library(tgimboxcore MODULE ${src_files} tgimbox-bind.cc)

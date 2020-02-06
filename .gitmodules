@@ -1,0 +1,6 @@
+[submodule "pybind/pybind11"]
+	path = pybind/pybind11
+	url = https://github.com/pybind/pybind11
+[submodule "pybind/pybind11_json"]
+	path = pybind/pybind11_json
+	url = https://github.com/pybind/pybind11_json
